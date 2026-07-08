@@ -14,7 +14,7 @@
   },
   "build": {
     "appId": "com.chimescribe.app",
-    "productName": "Chime Scribe",
+    "productName": "Smart Scribe",
     "files": [
       "main.js",
       "index.html",
