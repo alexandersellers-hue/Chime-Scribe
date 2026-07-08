@@ -397,10 +397,32 @@ function toast(msg){
 
 /* ============ project ops ============ */
 function createProject(){
-  const name = (prompt("Project name","Chime Inspection — Trial "+(state.projects.length+1))||"").trim();
-  if(!name) return;
-  const p={ id:uid(), name, createdAt:Date.now(), recording:false, notes:[], draft:"", exportCount:0, exportText:"", exportedAt:0, gdoc:newGdoc() };
-  state.projects.unshift(p); state.activeId=p.id; saveState(); render();
+  askText("New project", "Name your project", "Chime Inspection — Trial "+(state.projects.length+1), "Create", (name)=>{
+    name=(name||"").trim();
+    if(!name) return;
+    const p={ id:uid(), name, createdAt:Date.now(), recording:false, notes:[], draft:"", exportCount:0, exportText:"", exportedAt:0, gdoc:newGdoc() };
+    state.projects.unshift(p); state.activeId=p.id; saveState(); render();
+  });
+}
+/* Small in-app text prompt (Electron blocks the browser prompt()). */
+function askText(title, label, def, okLabel, cb){
+  const old=$("#promptOverlay"); if(old) old.remove();
+  const wrap=document.createElement("div");
+  wrap.className="modal-overlay"; wrap.id="promptOverlay";
+  wrap.innerHTML=`<div class="modal">
+    <div class="modal-head"><h3>${esc(title)}</h3><button class="modal-x" id="pmX">×</button></div>
+    <div class="modal-body"><div class="field"><label>${esc(label||"")}</label>
+      <input class="txt" id="pmInput" style="width:100%" value="${esc(def||"")}"></div></div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="pmCancel">Cancel</button>
+      <button class="btn btn-steel" id="pmOk">${esc(okLabel||"OK")}</button></div>
+  </div>`;
+  document.body.appendChild(wrap);
+  const input=$("#pmInput"); input.focus(); input.select();
+  const close=()=>wrap.remove();
+  const ok=()=>{ const v=input.value; close(); cb(v); };
+  $("#pmX").onclick=close; $("#pmCancel").onclick=close; $("#pmOk").onclick=ok;
+  input.addEventListener("keydown",e=>{ if(e.key==="Enter"){e.preventDefault();ok();} if(e.key==="Escape")close(); });
+  wrap.addEventListener("click",e=>{ if(e.target===wrap) close(); });
 }
 function deleteProject(id){
   const p=state.projects.find(x=>x.id===id); if(!p) return;
