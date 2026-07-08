@@ -1,0 +1,63 @@
+name: Build Chime Scribe
+
+# Runs automatically when you upload/commit files, and can be run by hand
+# from the Actions tab (Run workflow).
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build installer
+        env:
+          # Don't attempt code-signing on the runner (unsigned build).
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --publish never
+
+      - name: Upload installer as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chime-scribe-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.AppImage
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Collect built installers
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish downloadable release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build (download below)
+          body: >
+            Download the installer for your computer:
+            the .dmg is for Mac, the .exe is for Windows.
+          files: artifacts/**/*
