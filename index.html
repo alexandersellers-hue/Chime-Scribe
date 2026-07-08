@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chime Scribe — R&D Log</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0E1B21">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Chime Scribe">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#DCE2E4; --surface:#FBFCFC; --surface-2:#F1F4F5;
+    --ink:#10222A; --ink-soft:#4B5C63; --ink-faint:#86959A;
+    --line:#C4CED1; --line-soft:#DBE1E3;
+    --amber:#E0912F; --amber-dim:#B4741F;
+    --steel:#2B6C78; --steel-dim:#1E505A;
+    --rust:#A8402A; --green:#2f7d46;
+    --console:#0E1B21; --trace:#E8A33D;
+    --sans:"Inter",system-ui,sans-serif;
+    --disp:"Space Grotesk",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --r:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  button{font-family:var(--disp);cursor:pointer;border:none;background:none;color:inherit}
+  button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--steel);outline-offset:2px}
+  ::selection{background:var(--amber);color:#fff}
+
+  .app{display:grid;grid-template-columns:264px 1fr;height:100vh;min-height:0}
+
+  .side{background:var(--console);color:#C7D2D6;display:flex;flex-direction:column;min-height:0;border-right:1px solid #06121a}
+  .brand{padding:22px 20px 16px;border-bottom:1px solid #1e333c}
+  .brand h1{font-family:var(--disp);font-weight:700;font-size:16px;letter-spacing:.02em;color:#F3F6F6;margin:0;line-height:1.25}
+  .brand .sub{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--trace);margin-top:7px}
+  .side-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#7f939a}
+  .proj-list{flex:1;overflow-y:auto;padding:0 12px 12px;min-height:0}
+  .proj{width:100%;text-align:left;display:block;padding:11px 12px;border-radius:8px;margin-bottom:5px;color:#c7d2d6;font-weight:500;font-size:14px;border:1px solid transparent;transition:background .12s,border-color .12s}
+  .proj:hover{background:#17303a}
+  .proj.active{background:#17303a;border-color:var(--steel)}
+  .proj .nm{display:block;font-family:var(--disp);letter-spacing:.01em}
+  .proj .meta{display:block;font-family:var(--mono);font-size:10.5px;color:#7f939a;margin-top:3px;letter-spacing:.03em}
+  .proj.active .meta{color:var(--trace)}
+  .proj-empty{color:#6a7e85;font-size:13px;padding:14px 12px;line-height:1.5}
+  .new-btn{margin:0 12px 14px;padding:11px;border-radius:8px;width:calc(100% - 24px);background:var(--amber);color:#241403;font-weight:600;font-size:13.5px;letter-spacing:.02em;display:flex;align-items:center;justify-content:center;gap:7px;transition:background .12s}
+  .new-btn:hover{background:#eca447}
+  .side-foot{padding:12px 20px 16px;border-top:1px solid #1e333c;display:flex;flex-direction:column;gap:8px}
+  .link-btn{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:#7f939a;text-align:left;background:none;padding:0;transition:color .12s}
+  .link-btn:hover{color:var(--rust)}
+
+  .main{overflow-y:auto;min-height:0;display:flex;flex-direction:column}
+  .wrap{max-width:840px;width:100%;margin:0 auto;padding:26px 32px 60px}
+
+  .ref{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;margin-bottom:20px}
+  .ref-top{display:flex;align-items:center;justify-content:space-between;cursor:pointer}
+  .ref-top h2{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);margin:0;font-weight:600}
+  .ref-toggle{font-family:var(--mono);font-size:11px;color:var(--steel);letter-spacing:.08em}
+  .ref-grid{margin-top:14px;display:grid;gap:9px}
+  .ref.collapsed .ref-grid{display:none}
+  .ref-sub{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:4px 0 -2px}
+  .ref-row{display:grid;grid-template-columns:220px 1fr;gap:14px;align-items:baseline}
+  .ref-cmd{font-family:var(--mono);font-size:12.5px;color:var(--ink);background:var(--surface-2);border:1px solid var(--line-soft);border-radius:5px;padding:4px 8px}
+  .ref-cmd b{color:var(--steel-dim);font-weight:600}
+  .ref-desc{font-size:13px;color:var(--ink-soft)}
+  @media(max-width:560px){.ref-row{grid-template-columns:1fr}}
+
+  .p-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:4px}
+  .p-title{font-family:var(--disp);font-weight:700;font-size:27px;letter-spacing:-.01em;margin:0}
+  .p-title-edit{font-family:var(--disp);font-weight:700;font-size:27px;letter-spacing:-.01em;border:none;border-bottom:2px solid var(--amber);background:transparent;color:var(--ink);width:100%;padding:0 0 2px}
+  .p-sub{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);letter-spacing:.05em;margin:3px 0 20px}
+  .edit-title{font-family:var(--mono);font-size:11px;color:var(--steel);letter-spacing:.05em;padding:0}
+
+  .console{background:var(--console);border-radius:var(--r);overflow:hidden;box-shadow:0 8px 22px -14px rgba(16,34,42,.5);margin-bottom:20px}
+  .console-bar{display:flex;align-items:center;gap:12px;padding:13px 16px;flex-wrap:wrap}
+  .status-pill{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;font-weight:600;padding:6px 12px;border-radius:20px;white-space:nowrap}
+  .status-pill.on{background:rgba(232,163,61,.16);color:var(--trace)}
+  .status-pill.off{background:#1c333c;color:#83979e}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .status-pill.on .dot{background:var(--trace);animation:pulse 1.2s ease-in-out infinite}
+  .status-pill.off .dot{background:#546a72}
+  @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(232,163,61,.5)}50%{opacity:.5;box-shadow:0 0 0 5px rgba(232,163,61,0)}}
+  @media(prefers-reduced-motion:reduce){.status-pill.on .dot,.mic-live{animation:none}}
+  .mic-area{flex:1;min-width:120px;display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11.5px;color:#8fa2a8;overflow:hidden}
+  .mic-live{width:9px;height:9px;border-radius:50%;background:#5ec2d6;flex:none;animation:pulse 1.1s ease-in-out infinite}
+  .mic-txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mic-txt em{color:#c9d6da;font-style:normal}
+  .btn-mic{font-family:var(--disp);font-weight:600;font-size:13px;padding:9px 15px;border-radius:8px;white-space:nowrap;background:#2a444d;color:#e7eef0;border:1px solid #3a5761;transition:filter .12s,background .12s}
+  .btn-mic:hover:not(:disabled){filter:brightness(1.1)}
+  .btn-mic.live{background:var(--rust);color:#fff;border-color:var(--rust)}
+  .btn-mic:disabled{opacity:.4;cursor:not-allowed}
+  .toggle-rec{font-family:var(--disp);font-weight:600;font-size:13px;letter-spacing:.02em;padding:9px 16px;border-radius:8px;white-space:nowrap;transition:filter .12s,background .12s}
+  .toggle-rec.start{background:var(--trace);color:#241403}
+  .toggle-rec.stop{background:#2a444d;color:#e7eef0;border:1px solid #3a5761}
+  .toggle-rec:hover{filter:brightness(1.06)}
+  .console-hint{padding:0 16px 11px;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:#5f767e;line-height:1.5}
+
+  .entry{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:22px;transition:box-shadow .15s}
+  .entry.locked{opacity:.55;pointer-events:none}
+  .entry.capturing{box-shadow:0 0 0 2px var(--steel)}
+  .entry-tabs{display:flex;gap:6px;margin-bottom:11px;flex-wrap:wrap}
+  .type-tab{font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--ink-soft);padding:5px 11px;border-radius:6px;border:1px solid var(--line);background:var(--surface-2);transition:all .12s}
+  .type-tab.sel{background:var(--steel);color:#fff;border-color:var(--steel)}
+  textarea.note-in{width:100%;min-height:96px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-family:var(--sans);font-size:15px;color:var(--ink);background:var(--surface-2);line-height:1.6}
+  textarea.note-in::placeholder{color:var(--ink-faint)}
+  .entry-actions{display:flex;gap:9px;margin-top:11px;flex-wrap:wrap}
+  .btn{font-family:var(--disp);font-weight:600;font-size:13px;letter-spacing:.02em;padding:9px 15px;border-radius:8px;transition:filter .12s,background .12s}
+  .btn-primary{background:var(--ink);color:#fff}
+  .btn-primary:hover{background:#1c3540}
+  .btn-ghost{background:var(--surface-2);color:var(--ink-soft);border:1px solid var(--line)}
+  .btn-ghost:hover{background:#e7ecee}
+  .btn-rust{background:#f6e6e2;color:var(--rust);border:1px solid #e6c6bf}
+  .btn-rust:hover{background:#f0d8d2}
+  .btn-steel{background:var(--steel);color:#fff}
+  .btn-steel:hover{background:var(--steel-dim)}
+  .lock-note{font-family:var(--mono);font-size:11px;color:var(--amber-dim);margin-top:9px;letter-spacing:.02em}
+
+  .log-head{display:flex;align-items:center;justify-content:space-between;margin:0 2px 12px}
+  .log-head h3{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);margin:0;font-weight:600}
+  .log-count{font-family:var(--mono);font-size:11px;color:var(--ink-faint);letter-spacing:.05em}
+  .note{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-bottom:9px;position:relative}
+  .note-meta{display:flex;align-items:center;gap:10px;margin-bottom:7px;flex-wrap:wrap}
+  .note-seq{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--ink)}
+  .note-tag{font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;padding:2px 8px;border-radius:4px;font-weight:600}
+  .tag-obs{background:#e3eef0;color:var(--steel-dim)}
+  .tag-tech{background:#fbeed6;color:var(--amber-dim)}
+  .tag-proc{background:#e8e6f0;color:#5b4b8a}
+  .tag-gen{background:var(--surface-2);color:var(--ink-soft)}
+  .note-sync{font-family:var(--mono);font-size:10px;color:var(--green);letter-spacing:.04em}
+  .note-time{font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-left:auto;letter-spacing:.03em}
+  .note-body{font-size:14.5px;color:var(--ink);white-space:pre-wrap;line-height:1.55}
+  .note-del{position:absolute;top:12px;right:12px;font-family:var(--mono);font-size:15px;line-height:1;color:var(--ink-faint);padding:2px 6px;border-radius:5px;transition:all .12s}
+  .note-del:hover{color:var(--rust);background:#f6e6e2}
+  .log-empty{border:1px dashed var(--line);border-radius:var(--r);padding:30px;text-align:center;color:var(--ink-faint);font-size:13.5px;line-height:1.55}
+
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);margin-top:26px;overflow:hidden}
+  .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+  .panel-head h3{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);margin:0;font-weight:600}
+  .panel-btns{display:flex;gap:8px;flex-wrap:wrap}
+  .panel-body{padding:16px 18px}
+
+  .sync-chip{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;padding:4px 10px;border-radius:20px;font-weight:600}
+  .sync-on{background:#e3f0e6;color:var(--green)}
+  .sync-off{background:var(--surface-2);color:var(--ink-faint)}
+  .sync-err{background:#f6e6e2;color:var(--rust)}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px}
+  .field-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  input.txt{flex:1;min-width:200px;border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-family:var(--mono);font-size:12.5px;color:var(--ink);background:var(--surface-2)}
+  .toggle-row{display:flex;align-items:center;gap:9px;margin:4px 0 14px}
+  .toggle-row input{width:16px;height:16px;accent-color:var(--steel)}
+  .toggle-row label{font-size:13px;color:var(--ink-soft)}
+  .gdoc-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .gdoc-note{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:11px;line-height:1.6}
+  .setup{margin-top:14px;border-top:1px dashed var(--line);padding-top:12px}
+  .setup summary{cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--steel);text-transform:uppercase}
+  .setup ol{margin:12px 0;padding-left:20px;font-size:13px;color:var(--ink-soft);line-height:1.75}
+  .setup ol b{color:var(--ink)}
+  pre.code{background:var(--console);color:#cfe0e4;font-family:var(--mono);font-size:11px;line-height:1.55;padding:14px;border-radius:8px;overflow:auto;max-height:260px;white-space:pre;margin:6px 0 10px}
+
+  .wiz-intro{font-size:13.5px;color:var(--ink-soft);margin-bottom:16px;line-height:1.55}
+  .step{display:grid;grid-template-columns:34px 1fr;gap:14px;padding:14px 0;border-top:1px solid var(--line-soft)}
+  .step:first-of-type{border-top:none;padding-top:2px}
+  .step-n{width:30px;height:30px;border-radius:50%;background:var(--steel);color:#fff;font-family:var(--disp);font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+  .step.done .step-n{background:var(--green)}
+  .step-title{font-family:var(--disp);font-weight:600;font-size:15px;color:var(--ink);margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .step-once{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber-dim);background:#fbeed6;padding:2px 7px;border-radius:20px;font-weight:600}
+  .step-text{font-size:13px;color:var(--ink-soft);line-height:1.6;margin-bottom:11px}
+  .step-text b{color:var(--ink)}
+  .step .field-row{margin-top:4px}
+  .step .gdoc-actions{margin-bottom:2px}
+  a.btn{text-decoration:none;display:inline-flex;align-items:center}
+  .connected .connected-line{font-size:14.5px;color:var(--green);font-weight:500;margin-bottom:14px;line-height:1.5}
+  .gdoc-err{font-family:var(--mono);font-size:11.5px;color:var(--rust);background:#f6e6e2;border:1px solid #e6c6bf;border-radius:8px;padding:10px 12px;margin-top:12px;line-height:1.6}
+
+  .field-note{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:6px;line-height:1.6}
+  .field-note b{color:var(--ink-soft)}
+  select.txt{appearance:auto}
+  .modal-overlay{position:fixed;inset:0;background:rgba(6,18,26,.5);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px}
+  .modal{background:var(--surface);border:1px solid var(--line);border-radius:14px;width:min(460px,100%);box-shadow:0 24px 60px -20px rgba(16,34,42,.6);overflow:hidden}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line-soft)}
+  .modal-head h3{font-family:var(--disp);font-weight:700;font-size:17px;margin:0}
+  .modal-x{font-size:22px;line-height:1;color:var(--ink-faint);padding:2px 8px;border-radius:6px}
+  .modal-x:hover{color:var(--ink);background:var(--surface-2)}
+  .modal-body{padding:18px}
+  .modal-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 18px;border-top:1px solid var(--line-soft)}
+
+  pre.export-pre{margin:0;padding:20px 22px;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--ink);white-space:pre-wrap;word-break:break-word;background:#fdfefe;max-height:440px;overflow:auto}
+  .export-empty{padding:24px 22px;color:var(--ink-faint);font-size:13.5px}
+  .export-stamp{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);letter-spacing:.04em}
+
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(12px);background:var(--ink);color:#fff;font-family:var(--mono);font-size:12.5px;letter-spacing:.03em;padding:11px 18px;border-radius:8px;opacity:0;pointer-events:none;transition:all .22s;z-index:50;max-width:88vw;text-align:center}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  .center-state{display:flex;align-items:center;justify-content:center;height:100%;padding:40px;text-align:center}
+  .center-state .inner{max-width:360px}
+  .center-state h2{font-family:var(--disp);font-size:20px;margin:0 0 8px}
+  .center-state p{color:var(--ink-soft);font-size:14px;margin:0 0 18px}
+  .spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--steel);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  @media(max-width:720px){
+    .app{grid-template-columns:1fr}
+    .side{position:fixed;inset:0 30% 0 0;z-index:40;transform:translateX(-105%);transition:transform .2s;box-shadow:0 0 40px rgba(0,0,0,.3)}
+    .side.open{transform:none}
+    .wrap{padding:18px 18px 60px}
+    .menu-btn{display:inline-flex}
+  }
+  .menu-btn{display:none;position:fixed;top:14px;left:14px;z-index:45;background:var(--console);color:#fff;width:40px;height:40px;border-radius:9px;align-items:center;justify-content:center;font-size:18px;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+  .scrim{display:none;position:fixed;inset:0;background:rgba(6,18,26,.4);z-index:39}
+  .scrim.open{display:block}
+</style>
+</head>
+<body>
+<button class="menu-btn" id="menuBtn" aria-label="Toggle projects">☰</button>
+<div class="scrim" id="scrim"></div>
+
+<div class="app">
+  <aside class="side" id="side">
+    <div class="brand">
+      <h1>Chime Scribe</h1>
+      <div class="sub">R&amp;D Note Log</div>
+    </div>
+    <div class="side-head"><span>Projects</span><span id="projCount">—</span></div>
+    <div class="proj-list" id="projList"></div>
+    <button class="new-btn" id="newProj">＋ New project</button>
+    <div class="side-foot">
+      <button class="link-btn" id="settingsBtn">⚙ Settings (voice engine &amp; key)</button>
+      <button class="link-btn" id="resetBtn">⟲ Reset all data</button>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <div class="center-state" id="loading">
+      <div class="inner"><div class="spin"></div><p>Loading your logs…</p></div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ apps script (shown in the setup panel) ============ */
+const APPS_SCRIPT = `function doGet(e)  { return handle_(e, true);  }
+function doPost(e) { return handle_(e, false); }
+
+function handle_(e, isGet) {
+  var cb = (e && e.parameter) ? e.parameter.callback : null;
+  var out;
+  try {
+    var data = isGet ? JSON.parse(e.parameter.data || '{}') : JSON.parse(e.postData.contents);
+    out = writeDoc_(data);
+  } catch (err) {
+    out = { ok: false, error: String(err) };
+  }
+  if (cb) {
+    return ContentService.createTextOutput(cb + '(' + JSON.stringify(out) + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(JSON.stringify(out))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function writeDoc_(data) {
+  if (!data.docId) return { ok: false, error: 'No document linked' };
+  var doc = DocumentApp.openById(data.docId);
+  var body = doc.getBody();
+
+  if (data.verify) {
+    body.appendParagraph('\u2713 Chime Scribe connected \u2014 ' + new Date().toLocaleString())
+        .editAsText().setForegroundColor('#2b6c78');
+    return { ok: true, verify: true };
+  }
+
+  if (data.eraseIds && data.eraseIds.length) {
+    var removed = 0;
+    data.eraseIds.forEach(function (id) { if (eraseEntry_(doc, id)) removed++; });
+    return { ok: true, erased: removed };
+  }
+
+  var entries = data.entries || (data.entry ? [data.entry] : []);
+  entries.forEach(function (en) {
+    var h = body.appendParagraph('Entry ' + en.seq + '  \u00B7  ' + en.type);
+    h.setHeading(DocumentApp.ParagraphHeading.HEADING3);
+    var m = body.appendParagraph('Logged: ' + en.logged);
+    m.editAsText().setForegroundColor('#666666').setFontSize(9);
+    var t = body.appendParagraph(en.text);
+    var sp = body.appendParagraph('');
+    if (en.id) {
+      try {
+        var range = doc.newRange()
+          .addElement(h).addElement(m).addElement(t).addElement(sp).build();
+        doc.addNamedRange('cs_' + en.id, range);
+      } catch (e2) {}
+    }
+  });
+  return { ok: true, added: entries.length };
+}
+
+function eraseEntry_(doc, id) {
+  var ranges = doc.getNamedRanges('cs_' + id);
+  if (!ranges || !ranges.length) return false;
+  ranges.forEach(function (nr) {
+    var els = nr.getRange().getRangeElements();
+    for (var i = els.length - 1; i >= 0; i--) {
+      try { els[i].getElement().removeFromParent(); } catch (e3) {}
+    }
+    try { nr.remove(); } catch (e4) {}
+  });
+  var body = doc.getBody();
+  if (body.getNumChildren() === 0) body.appendParagraph('');
+  return true;
+}`;
+
+/* ============ persistence ============ */
+const KEY = "chimescribe:data:v3";
+let state = { projects: [], activeId: null, gdocEndpoint: "", cloudKey: "", voiceEngine: "auto" };
+let ui = { draftType: "obs", refOpen: true };
+
+const TYPES = {
+  obs:  { label:"Observation",     tag:"tag-obs"  },
+  tech: { label:"Technical data",  tag:"tag-tech" },
+  proc: { label:"Procedure change",tag:"tag-proc" },
+  gen:  { label:"General note",    tag:"tag-gen"  },
+};
+const newGdoc = () => ({ docUrl:"", docId:"", autosync:true, pushed:[], lastSync:0, error:"" });
+
+/* Storage adapter: uses Claude.ai artifact storage when present,
+   otherwise the browser's localStorage (downloaded file), otherwise memory. */
+const store = (function(){
+  const mem = {};
+  const hasWin = (typeof window!=="undefined" && window.storage && typeof window.storage.get==="function");
+  let hasLS = false;
+  try{ const k="__cs_probe"; window.localStorage.setItem(k,"1"); window.localStorage.removeItem(k); hasLS=true; }catch(e){ hasLS=false; }
+  const mode = hasWin ? "window" : (hasLS ? "local" : "memory");
+  return {
+    mode,
+    async get(key){
+      if(mode==="window"){ try{ const r=await window.storage.get(key,false); return r&&r.value?r.value:null; }catch(e){ return null; } }
+      if(mode==="local"){ return window.localStorage.getItem(key); }
+      return (key in mem) ? mem[key] : null;
+    },
+    async set(key,val){
+      if(mode==="window"){ return await window.storage.set(key,val,false); }
+      if(mode==="local"){ window.localStorage.setItem(key,val); return true; }
+      mem[key]=val; return true;
+    },
+    async del(key){
+      if(mode==="window"){ try{ await window.storage.delete(key,false);}catch(e){} return; }
+      if(mode==="local"){ window.localStorage.removeItem(key); return; }
+      delete mem[key];
+    }
+  };
+})();
+
+async function loadState(){
+  try{
+    const raw = await store.get(KEY);
+    if(raw){ state = JSON.parse(raw); }
+  }catch(e){ /* first run or unreadable: start fresh */ }
+  if(!state.projects) state.projects = [];
+  if(typeof state.gdocEndpoint !== "string") state.gdocEndpoint = "";
+  if(typeof state.cloudKey !== "string") state.cloudKey = "";
+  if(typeof state.voiceEngine !== "string") state.voiceEngine = "auto";
+  state.projects.forEach(p=>{
+    if(!p.gdoc) p.gdoc = newGdoc();
+    if(!Array.isArray(p.gdoc.pushed)) p.gdoc.pushed = [];
+  });
+}
+let saveTimer=null, saveWarned=false;
+function saveState(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try{ await store.set(KEY, JSON.stringify(state)); }
+    catch(e){ if(!saveWarned){ saveWarned=true; toast("This browser is blocking storage — notes stay for this session only."); } }
+  }, 100);
+}
+
+/* ============ helpers ============ */
+const $ = s => document.querySelector(s);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+function stamp(d=new Date()){
+  const p=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+function activeProject(){ return state.projects.find(p=>p.id===state.activeId) || null; }
+function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+let toastTimer=null;
+function toast(msg){
+  const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),2600);
+}
+
+/* ============ project ops ============ */
+function createProject(){
+  const name = (prompt("Project name","Chime Inspection — Trial "+(state.projects.length+1))||"").trim();
+  if(!name) return;
+  const p={ id:uid(), name, createdAt:Date.now(), recording:false, notes:[], draft:"", exportCount:0, exportText:"", exportedAt:0, gdoc:newGdoc() };
+  state.projects.unshift(p); state.activeId=p.id; saveState(); render();
+}
+function deleteProject(id){
+  const p=state.projects.find(x=>x.id===id); if(!p) return;
+  if(!confirm(`Delete "${p.name}" and its ${p.notes.length} note(s)? This can't be undone.`)) return;
+  state.projects = state.projects.filter(x=>x.id!==id);
+  if(state.activeId===id) state.activeId = state.projects[0]?.id || null;
+  saveState(); render();
+}
+function selectProject(id){ stopListening(); state.activeId=id; saveState(); render(); closeSide(); }
+function renameProject(p){
+  const wrap=$("#pTitleWrap"); if(!wrap) return;
+  wrap.innerHTML=`<input class="p-title-edit" id="pTitleInput" value="${esc(p.name)}" />`;
+  const inp=$("#pTitleInput"); inp.focus(); inp.select();
+  const commit=()=>{ const v=inp.value.trim(); if(v){p.name=v;saveState();} render(); };
+  inp.addEventListener("keydown",e=>{ if(e.key==="Enter")commit(); if(e.key==="Escape")render(); });
+  inp.addEventListener("blur",commit);
+}
+
+/* ============ note ops ============ */
+function toggleRecording(){
+  const p=activeProject(); if(!p) return;
+  if(p.recording && voice.listening) stopListening();
+  p.recording=!p.recording; saveState(); render();
+  toast(p.recording?"Note taking started":"Note taking ended");
+}
+function addNote(text, type){
+  const p=activeProject(); if(!p) return false;
+  text=(text||"").replace(/^\s*note the following[:,]?\s*/i,"").trim();
+  if(!text){ toast("Nothing to log"); return false; }
+  if(!p.recording){ toast("Press “Note Taking Start” first"); return false; }
+  const note={ id:uid(), seq:p.notes.length+1, type:type||"gen", text, ts:Date.now() };
+  p.notes.push(note); saveState();
+  maybePush(note);
+  return true;
+}
+function eraseLast(){
+  const p=activeProject(); if(!p||!p.notes.length){ toast("No notes to erase"); return false; }
+  const last=p.notes[p.notes.length-1];
+  const wasInDoc = p.gdoc.pushed.includes(last.id);
+  p.notes.pop();
+  p.gdoc.pushed = p.gdoc.pushed.filter(id=>id!==last.id);
+  saveState();
+  toast(`Erased entry ${String(last.seq).padStart(3,"0")}`);
+  if(wasInDoc) syncErase([last.id]);
+  return true;
+}
+function eraseLastConfirm(){
+  const p=activeProject(); if(!p||!p.notes.length){ toast("No notes to erase"); return; }
+  const last=p.notes[p.notes.length-1];
+  if(!confirm(`Erase previous note (Entry ${String(last.seq).padStart(3,"0")})?`)) return;
+  eraseLast(); render();
+}
+function deleteNote(id){
+  const p=activeProject(); if(!p) return;
+  const wasInDoc = p.gdoc.pushed.includes(id);
+  p.notes=p.notes.filter(n=>n.id!==id).map((n,i)=>({...n,seq:i+1}));
+  p.gdoc.pushed=p.gdoc.pushed.filter(x=>x!==id);
+  saveState(); render();
+  if(wasInDoc) syncErase([id]);
+}
+async function syncErase(ids){
+  const p=activeProject(); if(!p) return;
+  const {ep,g}=syncInfo(p);
+  if(!ep || !g.docId) return;
+  try{
+    const resp=await callSync({ docId:g.docId, eraseIds:ids });
+    if(resp && resp.ok && resp.erased>0){ g.error=""; toast("✓ Removed from your Google Doc"); }
+    else if(resp && resp.ok){ toast("Erased here. (That entry predates doc-erase, so it stays in the Doc.)"); }
+    else { g.error=(resp&&resp.error)||"Couldn't remove it from the Doc."; toast("Erased here, but the Doc entry couldn't be removed."); }
+  }catch(e){ toast("Erased here; couldn't reach the Doc to remove it."); }
+  saveState(); updateSyncUI();
+}
+
+/* ============ draft persistence ============ */
+function setDraft(text,{dom=true}={}){
+  const p=activeProject(); if(!p) return;
+  p.draft=text; saveState();
+  if(dom){ const el=$("#noteIn"); if(el && el.value!==text) el.value=text; }
+}
+
+/* ============ Google Docs live sync ============ */
+function parseDocId(url){
+  if(!url) return "";
+  const m = url.match(/\/d\/([A-Za-z0-9_-]{20,})/);
+  if(m) return m[1];
+  if(/^[A-Za-z0-9_-]{20,}$/.test(url.trim())) return url.trim();
+  return "";
+}
+function fmtEntry(n){
+  return { id:n.id, seq:String(n.seq).padStart(3,"0"), type:TYPES[n.type]?.label||"Note", logged:stamp(new Date(n.ts)), text:n.text };
+}
+function syncInfo(p){
+  const ep=state.gdocEndpoint||"", g=p.gdoc||newGdoc();
+  const linked=!!(ep && g.docId);
+  const unsynced=p.notes.filter(n=>!(g.pushed||[]).includes(n.id)).length;
+  return {ep,g,linked,unsynced};
+}
+function chipHTML(p){
+  const {g,linked,unsynced}=syncInfo(p);
+  if(g.error) return `<span class="sync-chip sync-err">sync error</span>`;
+  if(linked)  return `<span class="sync-chip sync-on">● live sync${unsynced?` · ${unsynced} pending`:""}</span>`;
+  return `<span class="sync-chip sync-off">not connected</span>`;
+}
+function noteHTML(p){
+  const {g,linked,unsynced}=syncInfo(p);
+  if(!linked) return "Add your sync endpoint and link a Doc to push entries automatically.";
+  if(g.error) return `<span style="color:var(--rust)">${esc(g.error)}</span>`;
+  if(g.lastSync) return `Last push ${stamp(new Date(g.lastSync))}${unsynced?` · ${unsynced} entr${unsynced===1?"y":"ies"} not yet pushed`:" · all entries pushed"}.`;
+  return "Linked. Entries will push to your Doc as you log them.";
+}
+function updateSyncUI(){
+  const p=activeProject(); if(!p) return;
+  const c=$("#syncChip"); if(c) c.innerHTML=chipHTML(p);
+  const n=$("#syncNote"); if(n) n.innerHTML=noteHTML(p);
+}
+function maybePush(note){
+  const p=activeProject(); if(!p) return;
+  const {ep,g}=syncInfo(p);
+  if(!ep || !g.docId || !g.autosync) return;
+  postEntries([note], {quiet:false});
+}
+
+/* JSONP call — lets us actually READ Google's reply (success or failure). */
+function callSync(payloadObj){
+  return new Promise((resolve,reject)=>{
+    const ep=(state.gdocEndpoint||"").trim();
+    if(!ep) return reject(new Error("no-endpoint"));
+    const cb="__cs_cb_"+Math.random().toString(36).slice(2);
+    const s=document.createElement("script");
+    let done=false;
+    const cleanup=()=>{ try{delete window[cb];}catch(_){window[cb]=undefined;} if(s.parentNode)s.parentNode.removeChild(s); clearTimeout(timer); };
+    const timer=setTimeout(()=>{ if(done)return; done=true; cleanup(); reject(new Error("timeout")); }, 15000);
+    window[cb]=(resp)=>{ if(done)return; done=true; cleanup(); resolve(resp); };
+    s.onerror=()=>{ if(done)return; done=true; cleanup(); reject(new Error("network")); };
+    s.src = ep + (ep.includes("?")?"&":"?") + "callback="+cb + "&data="+encodeURIComponent(JSON.stringify(payloadObj));
+    document.head.appendChild(s);
+  });
+}
+async function postEntries(notes, {quiet=false}={}){
+  const p=activeProject(); if(!p) return false;
+  const {ep,g}=syncInfo(p);
+  if(!ep || !g.docId){ toast("Finish the quick setup first"); return false; }
+  let okCount=0, failMsg="";
+  for(const n of notes){
+    try{
+      const resp=await callSync({ docId:g.docId, project:p.name, entries:[fmtEntry(n)] });
+      if(resp && resp.ok){ if(!g.pushed.includes(n.id)) g.pushed.push(n.id); okCount++; }
+      else { failMsg=(resp&&resp.error)||"Google couldn't write to that Doc."; }
+    }catch(e){
+      failMsg = e.message==="timeout"
+        ? "No reply from the connector. Make sure it's deployed with access set to “Anyone.”"
+        : "Couldn't reach the connector link. Double-check the URL you pasted.";
+      break;
+    }
+  }
+  if(okCount>0){ g.lastSync=Date.now(); if(okCount===notes.length) g.error=""; }
+  if(failMsg) g.error=failMsg;
+  saveState(); updateSyncUI();
+  if(!quiet){
+    if(okCount>0 && !failMsg) toast(okCount===1?"✓ Added to your Google Doc":`✓ Added ${okCount} entries to your Doc`);
+    else if(failMsg) toast("Couldn't add to the Doc — see the message in the sync panel.");
+  }
+  return okCount>0;
+}
+function connectDoc(url){
+  const p=activeProject(); if(!p) return;
+  const id=parseDocId(url);
+  if(!id){ toast("That doesn't look like a Google Doc link — paste the whole link from the address bar."); return; }
+  p.gdoc.docUrl=url; p.gdoc.docId=id; p.gdoc.error=""; saveState(); render();
+  if(!state.gdocEndpoint){ toast("Doc saved. Now finish Step 2 (paste the connector link)."); return; }
+  verifySync();
+}
+function saveEndpoint(){
+  state.gdocEndpoint=($("#epInput").value||"").trim(); saveState(); render();
+  if(!state.gdocEndpoint){ toast("Connector link cleared"); return; }
+  const g=activeProject()?.gdoc;
+  if(g && g.docId) verifySync(); else toast("Saved. Now do Step 3 (paste your Google Doc link).");
+}
+function pushAll(){
+  const p=activeProject(); if(!p) return;
+  const {ep,g}=syncInfo(p);
+  if(!ep || !g.docId){ toast("Finish the quick setup first"); return; }
+  let list=p.notes.filter(n=>!g.pushed.includes(n.id));
+  if(!list.length){
+    if(!confirm("Everything's already in the Doc. Add the whole log again anyway?")) return;
+    list=p.notes;
+  }
+  if(!list.length){ toast("No notes to add yet"); return; }
+  toast(`Adding ${list.length} entr${list.length===1?"y":"ies"}…`);
+  postEntries(list);
+}
+async function verifySync(){
+  const p=activeProject(); const {ep,g}=syncInfo(p);
+  if(!ep || !g.docId){ toast("Finish the quick setup first"); return; }
+  toast("Testing the connection…");
+  try{
+    const resp=await callSync({ docId:g.docId, verify:true });
+    if(resp && resp.ok){ g.error=""; saveState(); updateSyncUI(); toast("✓ Connected! A test line just went into your Doc."); }
+    else { g.error=(resp&&resp.error)||"Google couldn't write to that Doc — check the Doc link and that the connector can edit it."; saveState(); updateSyncUI(); toast("Almost — see the message in the sync panel."); }
+  }catch(e){
+    g.error = e.message==="timeout"
+      ? "No reply from the connector. In Apps Script, redeploy with “Who has access: Anyone.”"
+      : "Couldn't reach that link. Recheck the connector URL (it should end in /exec).";
+    saveState(); updateSyncUI(); toast("Couldn't reach the connector — see the sync panel.");
+  }
+}
+
+/* ============ export ("Complete note") ============ */
+function buildExport(p){
+  const now=new Date(), L=[];
+  L.push("ULTRASONIC CHIME INSPECTION — R&D LOG");
+  L.push("Project: "+p.name);
+  L.push("Exported: "+stamp(now)+(p.exportCount>0?"  (revision "+(p.exportCount+1)+")":""));
+  L.push("Total entries: "+p.notes.length);
+  L.push("");
+  if(!p.notes.length) L.push("(No entries logged yet.)");
+  p.notes.forEach(n=>{
+    L.push("──────────────────────────────────────────");
+    L.push(`Entry ${String(n.seq).padStart(3,"0")}  ·  ${TYPES[n.type]?.label||"Note"}`);
+    L.push("Logged: "+stamp(new Date(n.ts)));
+    L.push("");
+    L.push(n.text);
+    L.push("");
+  });
+  return L.join("\n");
+}
+function buildExportHTML(p){
+  const now=new Date();
+  let h=`<h1>Ultrasonic Chime Inspection — R&amp;D Log</h1>`;
+  h+=`<p><b>Project:</b> ${esc(p.name)}<br><b>Exported:</b> ${stamp(now)}`;
+  if(p.exportCount>0) h+=` (revision ${p.exportCount+1})`;
+  h+=`<br><b>Total entries:</b> ${p.notes.length}</p><hr>`;
+  p.notes.forEach(n=>{
+    h+=`<h3>Entry ${String(n.seq).padStart(3,"0")} · ${TYPES[n.type]?.label||"Note"}</h3>`;
+    h+=`<p style="color:#666;font-size:.9em"><b>Logged:</b> ${stamp(new Date(n.ts))}</p>`;
+    h+=`<p>${esc(n.text).replace(/\n/g,"<br>")}</p><hr>`;
+  });
+  return h;
+}
+function completeNote(){
+  const p=activeProject(); if(!p) return;
+  if(!p.notes.length){ toast("Log an entry before completing"); return; }
+  p.exportText=buildExport(p);
+  p.exportCount=(p.exportCount||0)+1;
+  p.exportedAt=Date.now();
+  saveState(); render();
+  toast(p.exportCount>1?"Document updated — earlier notes preserved":"Document structured for export");
+  $("#exportPanel")?.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+async function copyExport(){
+  const p=activeProject(); if(!p||!p.exportText) return;
+  try{
+    if(navigator.clipboard && window.ClipboardItem){
+      await navigator.clipboard.write([ new ClipboardItem({
+        "text/html": new Blob([buildExportHTML(p)],{type:"text/html"}),
+        "text/plain": new Blob([p.exportText],{type:"text/plain"}),
+      })]);
+    } else { await navigator.clipboard.writeText(p.exportText); }
+    toast("Copied — paste into Google Docs");
+  }catch(e){
+    const pre=$("#exportPre");
+    if(pre){ const r=document.createRange(); r.selectNodeContents(pre);
+      const s=getSelection(); s.removeAllRanges(); s.addRange(r);
+      try{ document.execCommand("copy"); toast("Copied — paste into Google Docs"); }
+      catch(_){ toast("Select the text and copy manually"); } }
+  }
+}
+function downloadExport(){
+  const p=activeProject(); if(!p||!p.exportText) return;
+  const blob=new Blob([p.exportText],{type:"text/plain"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=p.name.replace(/[^\w\-]+/g,"_")+"_log.txt";
+  a.click(); URL.revokeObjectURL(a.href);
+  toast("Downloaded .txt");
+}
+
+/* ============ voice dictation (persistent / hands-free) ============ */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const IS_ELECTRON = /electron/i.test(navigator.userAgent||"");
+let voice = { mode:null, rec:null, stream:null, listening:false, active:false, capturing:false, interim:"",
+              restartTimer:null, watchdog:null, retries:0,
+              ws:null, recorder:null, keepAlive:null, reconnectTimer:null };
+
+/* Which engine to use: Chrome's built-in (free) or cloud (Deepgram). */
+function chosenMode(){
+  const pref = state.voiceEngine || "auto";
+  if(pref==="cloud")   return "cloud";
+  if(pref==="browser") return "browser";
+  if(IS_ELECTRON)      return "cloud";        // desktop app has no built-in speech
+  return SR ? "browser" : "cloud";
+}
+function voiceAvailable(){ return chosenMode()==="cloud" ? true : !!SR; }
+
+/* Hold one mic stream open so the browser only prompts once. */
+async function ensureMicStream(){
+  if(voice.stream) return true;
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return true;
+  try{ voice.stream = await navigator.mediaDevices.getUserMedia({audio:true}); return true; }
+  catch(e){ return !(e && (e.name==="NotAllowedError" || e.name==="SecurityError")); }
+}
+
+/* ---- browser engine (Web Speech) ---- */
+function buildRec(){
+  const rec = new SR();
+  rec.continuous = true; rec.interimResults = true; rec.lang = "en-US";
+  rec.onstart = ()=>{ voice.active=true; voice.retries=0; };
+  rec.onresult = (e)=>{
+    let interim="";
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const res=e.results[i];
+      if(res.isFinal) handleFinal(res[0].transcript);
+      else interim += res[0].transcript;
+    }
+    voice.interim = interim; setMicStatus();
+  };
+  rec.onerror = (e)=>{
+    if(e.error==="not-allowed" || e.error==="service-not-allowed"){
+      voice.listening=false; voice.active=false; stopWatchdog(); render();
+      toast("Mic is blocked. Allow it in the address bar, then press Dictate again.");
+    }
+  };
+  rec.onend = ()=>{ voice.active=false; if(voice.listening && voice.mode==="browser") scheduleRestart(120); };
+  return rec;
+}
+function scheduleRestart(delay){ clearTimeout(voice.restartTimer); voice.restartTimer = setTimeout(safeStart, delay==null?300:delay); }
+function safeStart(){
+  if(!voice.listening || voice.active || voice.mode!=="browser") return;
+  if(!voice.rec) voice.rec = buildRec();
+  try{ voice.rec.start(); }
+  catch(e){ voice.retries++; if(voice.retries>=4){ voice.rec=buildRec(); voice.retries=0; } scheduleRestart(Math.min(1500,250*voice.retries)); }
+}
+function startWatchdog(){ stopWatchdog(); voice.watchdog = setInterval(()=>{ if(voice.listening && voice.mode==="browser" && !voice.active) scheduleRestart(0); }, 3000); }
+function stopWatchdog(){ if(voice.watchdog){ clearInterval(voice.watchdog); voice.watchdog=null; } }
+
+/* ---- cloud engine (Deepgram streaming) ---- */
+function dgUrl(){
+  const q = new URLSearchParams({ model:"nova-2", language:"en-US", smart_format:"true", punctuate:"true", interim_results:"true" });
+  return "wss://api.deepgram.com/v1/listen?"+q.toString();
+}
+function stopRecorder(){ if(voice.recorder){ try{ voice.recorder.stop(); }catch(_){}} voice.recorder=null; }
+async function startCloud(){
+  const key=(state.cloudKey||"").trim();
+  if(!key){ toast("Add your transcription key in Settings to use voice in the desktop app."); openSettings(); voice.listening=false; render(); return; }
+  const okMic=await ensureMicStream();
+  if(!okMic){ toast("Microphone permission was denied."); voice.listening=false; render(); return; }
+  let ws; try{ ws=new WebSocket(dgUrl(), ["token", key]); }catch(e){ toast("Couldn't open the transcription connection."); voice.listening=false; render(); return; }
+  voice.ws=ws;
+  ws.onopen=()=>{
+    voice.active=true; voice.retries=0; setMicStatus();
+    let mime = (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) ? "audio/webm;codecs=opus"
+             : (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported("audio/webm")) ? "audio/webm" : "";
+    try{ voice.recorder = mime ? new MediaRecorder(voice.stream,{mimeType:mime}) : new MediaRecorder(voice.stream); }
+    catch(_){ try{ voice.recorder=new MediaRecorder(voice.stream); }catch(__){ toast("This browser can't capture audio for cloud voice."); return; } }
+    voice.recorder.ondataavailable=(ev)=>{ if(ev.data && ev.data.size>0 && voice.ws && voice.ws.readyState===1) voice.ws.send(ev.data); };
+    voice.recorder.start(250);
+    voice.keepAlive=setInterval(()=>{ if(voice.ws && voice.ws.readyState===1) voice.ws.send(JSON.stringify({type:"KeepAlive"})); }, 6000);
+  };
+  ws.onmessage=(ev)=>{
+    let msg; try{ msg=JSON.parse(ev.data); }catch(_){ return; }
+    if(msg.type && msg.type!=="Results") return;
+    const alt = msg.channel && msg.channel.alternatives && msg.channel.alternatives[0];
+    const text = alt ? (alt.transcript||"") : "";
+    if(!text) return;
+    if(msg.is_final){ handleFinal(text); voice.interim=""; } else { voice.interim=text; }
+    setMicStatus();
+  };
+  ws.onerror=()=>{};
+  ws.onclose=(ev)=>{
+    const wasActive=voice.active; voice.active=false; stopRecorder(); clearInterval(voice.keepAlive);
+    if(!voice.listening) return;
+    if(ev.code===1008 || (ev.code>=4000 && ev.code<4100 && !wasActive)){
+      voice.listening=false; render(); toast("Transcription key was rejected. Check it in Settings."); return;
+    }
+    voice.retries = wasActive ? 0 : (voice.retries+1);
+    if(voice.retries>4){ voice.listening=false; render(); toast("Can't reach the transcription service. Check your key and internet."); return; }
+    voice.reconnectTimer=setTimeout(()=>{ if(voice.listening) startCloud(); }, 500+300*voice.retries);
+  };
+}
+function stopCloud(){
+  clearInterval(voice.keepAlive); clearTimeout(voice.reconnectTimer); stopRecorder();
+  if(voice.ws){ try{ voice.ws.send(JSON.stringify({type:"CloseStream"})); }catch(_){}
+                try{ voice.ws.close(); }catch(_){}; voice.ws=null; }
+}
+
+/* ---- shared start/stop ---- */
+async function startListening(){
+  const p=activeProject(); if(!p) return;
+  voice.mode = chosenMode();
+  if(voice.mode==="browser" && !SR){ toast("Built-in voice needs Chrome. Add a transcription key in Settings for cloud voice."); openSettings(); return; }
+  if(!p.recording){ p.recording=true; saveState(); }
+  voice.listening=true; voice.capturing=false; voice.interim=""; voice.retries=0;
+  if(voice.mode==="browser"){
+    const okMic=await ensureMicStream();
+    if(!okMic){ voice.listening=false; toast("Microphone permission was denied."); return; }
+    if(!voice.rec) voice.rec=buildRec();
+    startWatchdog(); safeStart(); render();
+    toast('Listening — say “Note the following…”. Stays on until you press Stop.');
+  } else {
+    render(); toast("Connecting transcription…");
+    startCloud();
+  }
+}
+function stopListening(){
+  voice.listening=false; voice.capturing=false; voice.interim=""; voice.retries=0;
+  stopWatchdog(); clearTimeout(voice.restartTimer);
+  if(voice.rec){ try{ voice.rec.stop(); }catch(_){}}
+  stopCloud();
+}
+function releaseMic(){
+  stopListening();
+  if(voice.stream){ voice.stream.getTracks().forEach(t=>{try{t.stop();}catch(_){}}); voice.stream=null; }
+}
+function toggleListening(){ voice.listening ? (stopListening(), render()) : startListening(); }
+
+/* ---- settings modal (voice engine + cloud key) ---- */
+function openSettings(){
+  closeSettings();
+  const eng=state.voiceEngine||"auto";
+  const mode=chosenMode();
+  const wrap=document.createElement("div");
+  wrap.id="settingsOverlay"; wrap.className="modal-overlay";
+  wrap.innerHTML=`<div class="modal">
+    <div class="modal-head"><h3>Settings</h3><button class="modal-x" id="setClose">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Voice engine</label>
+        <select class="txt" id="setEngine">
+          <option value="auto" ${eng==="auto"?"selected":""}>Automatic (recommended)</option>
+          <option value="browser" ${eng==="browser"?"selected":""}>Chrome built-in (free)</option>
+          <option value="cloud" ${eng==="cloud"?"selected":""}>Cloud (Deepgram)</option>
+        </select>
+        <div class="field-note">Currently using: <b>${mode==="cloud"?"Cloud (Deepgram)":"Chrome built-in"}</b>${IS_ELECTRON?" — the desktop app requires cloud voice.":""}</div>
+      </div>
+      <div class="field"><label>Deepgram API key (for cloud voice)</label>
+        <input class="txt" id="setKey" type="password" placeholder="Paste your Deepgram key" value="${esc(state.cloudKey||"")}">
+        <div class="field-note">Get a free key at <b>console.deepgram.com</b> → Create API Key. Free credits included. Stored only on this device.</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="setCancel">Cancel</button>
+      <button class="btn btn-steel" id="setSave">Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap);
+  $("#setClose").onclick=closeSettings; $("#setCancel").onclick=closeSettings;
+  wrap.addEventListener("click",e=>{ if(e.target===wrap) closeSettings(); });
+  $("#setSave").onclick=()=>{
+    state.voiceEngine=$("#setEngine").value;
+    state.cloudKey=$("#setKey").value.trim();
+    saveState(); closeSettings(); render(); toast("Settings saved");
+  };
+}
+function closeSettings(){ const o=$("#settingsOverlay"); if(o) o.remove(); }
+
+function commitBuffer(){
+  const p=activeProject(); if(!p) return false;
+  if(voice.capturing && p.draft && p.draft.trim()){
+    const ok=addNote(p.draft, ui.draftType);
+    if(ok){ setDraft(""); voice.capturing=false; return true; }
+  }
+  voice.capturing=false; return false;
+}
+function appendSpoken(t){
+  const p=activeProject(); if(!p) return;
+  const cur=(p.draft||"").trim();
+  setDraft(cur ? cur+" "+t.trim() : t.trim());
+}
+function handleFinal(raw){
+  const clean = raw.toLowerCase().replace(/[.,!?;:'"]/g,"").replace(/\s+/g," ").trim();
+
+  if(/\b(complete note|complete the note|export the note|export note)\b/.test(clean)){ commitBuffer(); completeNote(); return; }
+  if(/\b(erase|delete|remove) (the )?previous note\b/.test(clean)){ voice.capturing=false; if(eraseLast()) render(); return; }
+  if(/\b(scratch that|clear (the )?note|discard note)\b/.test(clean)){ setDraft(""); voice.capturing=false; toast("Cleared current entry"); return; }
+  if(/\blog entry\b/.test(clean)){ if(commitBuffer()){ render(); toast("Entry logged"); } else { toast("Say “Note the following…” first"); } return; }
+  if(/\b(save note|end note|save (the )?entry)\b/.test(clean)){ if(commitBuffer()){ render(); toast("Entry saved"); } return; }
+
+  const idx = clean.indexOf("note the following");
+  if(idx !== -1){
+    commitBuffer();
+    voice.capturing = true;
+    const oi = raw.toLowerCase().indexOf("note the following");
+    let rest = oi!==-1 ? raw.slice(oi + "note the following".length) : "";
+    rest = rest.replace(/^[\s:,\-–]+/,"").trim();
+    setDraft(rest); render(); return;
+  }
+  if(voice.capturing) appendSpoken(raw);
+}
+function setMicStatus(){
+  const el=$("#micStatus"); if(!el) return;
+  if(!voice.listening){ el.innerHTML=""; return; }
+  if(voice.interim){ el.innerHTML=`<span class="mic-live"></span><span class="mic-txt"><em>…</em> ${esc(voice.interim)}</span>`; return; }
+  el.innerHTML = voice.capturing
+    ? `<span class="mic-live"></span><span class="mic-txt">Dictating — say “log entry” to save, or keep talking</span>`
+    : `<span class="mic-live"></span><span class="mic-txt">Listening — say “Note the following…”</span>`;
+}
+
+/* ============ command reference ============ */
+function refHTML(){
+  const typed=[
+    ['Note the following: …','Log a new observation (note taking must be on)'],
+    ['Complete note','Structure the log for Google Docs export; re-run to update &amp; keep all prior notes'],
+    ['Erase previous note','Delete the most recent entry'],
+  ];
+  const spoken=[
+    ['“Note the following…”','Start dictating an entry; words after the phrase become the note'],
+    ['“Log entry”','Immediately save the entry you are dictating and keep going'],
+    ['“Save note” / “End note”','Also saves the current entry'],
+    ['“Complete note”','Save the current entry and build the export'],
+    ['“Erase previous note”','Delete the most recent saved entry'],
+    ['“Scratch that”','Clear the entry you are currently dictating'],
+  ];
+  const rows=a=>a.map(r=>`<div class="ref-row"><span class="ref-cmd">${r[0].replace(/^([^:“]+)(:)?/,(m,p1,p2)=>`<b>${p1}</b>${p2||""}`)}</span><span class="ref-desc">${r[1]}</span></div>`).join("");
+  return `<div class="ref ${ui.refOpen?"":"collapsed"}" id="refBox">
+    <div class="ref-top" id="refTop">
+      <h2>Command reference</h2>
+      <span class="ref-toggle">${ui.refOpen?"hide ▲":"show ▼"}</span>
+    </div>
+    <div class="ref-grid">
+      <div class="ref-sub">Typed</div>${rows(typed)}
+      <div class="ref-sub">Spoken · press 🎤 Dictate first</div>${rows(spoken)}
+    </div>
+  </div>`;
+}
+
+/* ============ render ============ */
+function renderSidebar(){
+  $("#projCount").textContent=state.projects.length;
+  const list=$("#projList");
+  if(!state.projects.length){ list.innerHTML=`<div class="proj-empty">No projects yet. Create one to start logging.</div>`; return; }
+  list.innerHTML="";
+  state.projects.forEach(p=>{
+    const b=document.createElement("button");
+    b.className="proj"+(p.id===state.activeId?" active":"");
+    const live = state.gdocEndpoint && p.gdoc && p.gdoc.docId;
+    b.innerHTML=`<span class="nm">${esc(p.name)}</span>
+      <span class="meta">${p.notes.length} entr${p.notes.length===1?"y":"ies"}${p.recording?" · ● rec":""}${live?" · ⇄ doc":""}</span>`;
+    b.onclick=()=>selectProject(p.id);
+    list.appendChild(b);
+  });
+}
+
+function render(){
+  $("#loading")?.remove();
+  renderSidebar();
+  const main=$("#main");
+  const p=activeProject();
+
+  if(!p){
+    main.innerHTML=`<div class="center-state"><div class="inner">
+      <h2>No project open</h2>
+      <p>Create a project in the left panel to begin. Each project keeps its own separate notes, voice session, and linked Google Doc.</p>
+      <button class="new-btn" style="position:static;width:auto;margin:0 auto;padding:11px 22px" onclick="createProject()">＋ New project</button>
+    </div></div>`;
+    return;
+  }
+
+  const rec=p.recording;
+  const vmode=chosenMode();
+  const micUnsupported=!voiceAvailable();
+  const needsKey = vmode==="cloud" && !(state.cloudKey||"").trim();
+  const micLabel = micUnsupported ? "🎤 Voice N/A" : (voice.listening ? "● Stop dictation" : "🎤 Dictate");
+  const {ep,g,linked}=syncInfo(p);
+
+  const notesHTML = p.notes.length
+    ? p.notes.map(n=>{
+        const synced = g.pushed.includes(n.id);
+        return `<div class="note">
+          <button class="note-del" title="Delete entry" onclick="deleteNote('${n.id}')">×</button>
+          <div class="note-meta">
+            <span class="note-seq">Entry ${String(n.seq).padStart(3,"0")}</span>
+            <span class="note-tag ${TYPES[n.type]?.tag||"tag-gen"}">${TYPES[n.type]?.label||"Note"}</span>
+            ${linked&&synced?`<span class="note-sync">⇄ in doc</span>`:""}
+            <span class="note-time">${stamp(new Date(n.ts))}</span>
+          </div>
+          <div class="note-body">${esc(n.text)}</div>
+        </div>`;
+      }).join("")
+    : `<div class="log-empty">No entries yet. Start note taking, then type or dictate your observations.</div>`;
+
+  const typeTabs=Object.entries(TYPES).map(([k,v])=>
+    `<button class="type-tab ${ui.draftType===k?"sel":""}" data-type="${k}">${v.label}</button>`).join("");
+
+  const exportHTML = p.exportText
+    ? `<pre class="export-pre" id="exportPre">${esc(p.exportText)}</pre>`
+    : `<div class="export-empty">Run <b>Complete note</b> for a clean, copy-paste snapshot of the whole log. (For hands-off updates, use live sync above instead.)</div>`;
+
+  main.innerHTML = `<div class="wrap">
+    ${refHTML()}
+
+    <div class="p-head">
+      <div style="flex:1;min-width:0" id="pTitleWrap"><h1 class="p-title">${esc(p.name)}</h1></div>
+      <button class="edit-title" id="renameBtn">rename</button>
+    </div>
+    <div class="p-sub">Created ${stamp(new Date(p.createdAt))} · ${p.notes.length} entr${p.notes.length===1?"y":"ies"}${p.exportCount?` · exported ${p.exportCount}×`:""}</div>
+
+    <div class="console">
+      <div class="console-bar">
+        <span class="status-pill ${rec?"on":"off"}"><span class="dot"></span>${rec?"Note Taking · Live":"Note Taking · Ended"}</span>
+        <span class="mic-area" id="micStatus"></span>
+        <button class="btn-mic ${voice.listening?"live":""}" id="micBtn" ${micUnsupported?"disabled title='Voice engine unavailable'":""}>${micLabel}</button>
+        <button class="toggle-rec ${rec?"stop":"start"}" id="recBtn">${rec?"■ Note Taking End":"● Note Taking Start"}</button>
+      </div>
+      <div class="console-hint">${
+        needsKey
+          ? `Cloud voice is selected but no key is set. <a href="#" id="hintSettings" style="color:var(--trace)">Add a Deepgram key in Settings</a> to dictate. Typing works now.`
+          : micUnsupported
+            ? "Voice needs Chrome/Edge, or set a cloud key in Settings. Typing works everywhere."
+            : `Tip: 🎤 Dictate, then say “Note the following…”, and “log entry” to save. Voice engine: ${vmode==="cloud"?"Cloud (Deepgram)":"Chrome built-in"} · change in Settings.`
+      }</div>
+    </div>
+
+    <div class="entry ${rec?"":"locked"} ${voice.capturing?"capturing":""}" id="entryBox">
+      <div class="entry-tabs">${typeTabs}</div>
+      <textarea class="note-in" id="noteIn" placeholder="${rec?'Type your observation here, or press 🎤 Dictate and speak it. Cmd/Ctrl + Enter logs the entry.':'Note taking is ended — press “Note Taking Start” to log.'}">${esc(p.draft||"")}</textarea>
+      <div class="entry-actions">
+        <button class="btn btn-primary" id="addBtn">Log entry</button>
+        <button class="btn btn-ghost" id="completeBtn">Complete note</button>
+        <button class="btn btn-rust" id="eraseBtn">Erase previous note</button>
+      </div>
+      ${!rec?`<div class="lock-note">Locked — the scribe only records while note taking is live.</div>`:""}
+    </div>
+
+    <div class="log-head"><h3>Session log</h3><span class="log-count">${p.notes.length} total</span></div>
+    <div class="log">${notesHTML}</div>
+
+    <!-- GOOGLE DOCS LIVE SYNC -->
+    <div class="panel" id="gdocPanel">
+      <div class="panel-head">
+        <h3>Live Google Doc</h3>
+        <span id="syncChip">${chipHTML(p)}</span>
+      </div>
+      <div class="panel-body">
+      ${ linked && !g.error ? `
+        <div class="connected">
+          <div class="connected-line">✓ Connected. Everything you log — typed or spoken — is added to your Google Doc automatically.</div>
+          <div class="gdoc-actions">
+            <a class="btn btn-steel" href="${esc(g.docUrl)}" target="_blank" rel="noopener">Open my Google Doc</a>
+            <button class="btn btn-ghost" id="pushAll">Re-send all notes</button>
+            <button class="btn btn-ghost" id="verifyBtn">Test</button>
+            <button class="btn btn-ghost" id="changeSetup">Change setup</button>
+          </div>
+          <div class="toggle-row" style="margin-top:12px">
+            <input type="checkbox" id="autosync" ${g.autosync?"checked":""}>
+            <label for="autosync">Add each note to the Doc the moment I log it</label>
+          </div>
+          <div class="gdoc-note" id="syncNote">${noteHTML(p)}</div>
+        </div>
+      ` : `
+        <div class="wiz-intro">Do steps 1–2 once. After that, connecting a Doc to any project is just step 3.</div>
+
+        <div class="step ${state.gdocEndpoint?"done":""}">
+          <div class="step-n">${state.gdocEndpoint?"✓":"1"}</div>
+          <div class="step-body">
+            <div class="step-title">Create the connector <span class="step-once">one time</span></div>
+            <div class="step-text">Opens Google Apps Script. Delete the sample code, paste ours, and hit Save (the 💾 icon).</div>
+            <div class="gdoc-actions">
+              <button class="btn btn-steel" id="openScript">Open Google Apps Script</button>
+              <button class="btn btn-primary" id="copyScript">Copy the code</button>
+              <button class="btn btn-ghost" id="viewCode">View code</button>
+            </div>
+            <pre class="code" id="gsCode" style="display:none">${esc(APPS_SCRIPT)}</pre>
+          </div>
+        </div>
+
+        <div class="step ${state.gdocEndpoint?"done":""}">
+          <div class="step-n">${state.gdocEndpoint?"✓":"2"}</div>
+          <div class="step-body">
+            <div class="step-title">Publish it &amp; paste the link <span class="step-once">one time</span></div>
+            <div class="step-text">In Apps Script: <b>Deploy ▸ New deployment ▸</b> pick <b>Web app</b> ▸ set <b>Execute as: Me</b> and <b>Who has access: Anyone</b> ▸ <b>Deploy</b> ▸ allow access. Copy the <b>Web app URL</b> it shows and paste it here.</div>
+            <div class="field-row">
+              <input class="txt" id="epInput" placeholder="Paste the Web app URL (ends in /exec)" value="${esc(ep)}">
+              <button class="btn btn-steel" id="epSave">Save</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="step ${g.docId?"done":""}">
+          <div class="step-n">${g.docId?"✓":"3"}</div>
+          <div class="step-body">
+            <div class="step-title">Pick this project's Google Doc</div>
+            <div class="step-text">Open (or make) your doc at docs.google.com, copy the link from the address bar, and paste it here.</div>
+            <div class="field-row">
+              <input class="txt" id="docInput" placeholder="Paste your Google Doc link" value="${esc(g.docUrl||"")}">
+              <button class="btn btn-steel" id="docLink" ${state.gdocEndpoint?"":"disabled style=opacity:.4 title='Do step 2 first'"}>Connect</button>
+            </div>
+          </div>
+        </div>
+
+        ${g.error?`<div class="gdoc-err" id="syncNote">${esc(g.error)}</div>`:`<div class="gdoc-note" id="syncNote">${noteHTML(p)}</div>`}
+      `}
+      </div>
+    </div>
+
+    <!-- MANUAL EXPORT (fallback / snapshot) -->
+    <div class="panel" id="exportPanel">
+      <div class="panel-head">
+        <div>
+          <h3>Copy / download snapshot</h3>
+          ${p.exportedAt?`<div class="export-stamp">last built ${stamp(new Date(p.exportedAt))}${p.exportCount>1?` · revision ${p.exportCount}`:""}</div>`:""}
+        </div>
+        <div class="panel-btns">
+          <button class="btn btn-steel" id="copyBtn" ${p.exportText?"":"disabled style=opacity:.4"}>Copy for Google Docs</button>
+          <button class="btn btn-ghost" id="dlBtn" ${p.exportText?"":"disabled style=opacity:.4"}>Download .txt</button>
+        </div>
+      </div>
+      <div>${exportHTML}</div>
+    </div>
+  </div>`;
+
+  wireMain();
+  setMicStatus();
+}
+
+/* ============ wiring ============ */
+function bind(id,ev,fn){ const el=$("#"+id); if(el) el[ev]=fn; }
+function wireMain(){
+  bind("refTop","onclick",()=>{ ui.refOpen=!ui.refOpen; $("#refBox").classList.toggle("collapsed"); $("#refTop .ref-toggle").textContent=ui.refOpen?"hide ▲":"show ▼"; });
+  bind("renameBtn","onclick",()=>renameProject(activeProject()));
+  bind("recBtn","onclick",toggleRecording);
+  bind("micBtn","onclick",toggleListening);
+  bind("hintSettings","onclick",(e)=>{ e.preventDefault(); openSettings(); });
+  document.querySelectorAll(".type-tab").forEach(t=>{
+    t.onclick=()=>{ ui.draftType=t.dataset.type; document.querySelectorAll(".type-tab").forEach(x=>x.classList.remove("sel")); t.classList.add("sel"); };
+  });
+  const inp=$("#noteIn");
+  if(inp){
+    inp.addEventListener("input",()=>setDraft(inp.value,{dom:false}));
+    inp.addEventListener("keydown",e=>{ if((e.metaKey||e.ctrlKey)&&e.key==="Enter") $("#addBtn").click(); });
+  }
+  bind("addBtn","onclick",()=>{
+    const v=$("#noteIn").value;
+    if(/^\s*(complete note|erase previous note)\s*$/i.test(v)){
+      if(/complete/i.test(v)) completeNote(); else eraseLastConfirm();
+      setDraft(""); return;
+    }
+    if(addNote(v, ui.draftType)){ setDraft(""); voice.capturing=false; render(); toast("Entry logged"); }
+  });
+  bind("completeBtn","onclick",completeNote);
+  bind("eraseBtn","onclick",eraseLastConfirm);
+  bind("copyBtn","onclick",copyExport);
+  bind("dlBtn","onclick",downloadExport);
+  // google docs
+  bind("epSave","onclick",saveEndpoint);
+  bind("docLink","onclick",()=>connectDoc($("#docInput").value.trim()));
+  bind("pushAll","onclick",pushAll);
+  bind("verifyBtn","onclick",verifySync);
+  bind("openScript","onclick",()=>window.open("https://script.google.com/home/projects/create","_blank","noopener"));
+  bind("viewCode","onclick",()=>{ const el=$("#gsCode"); if(el) el.style.display = el.style.display==="none" ? "block" : "none"; });
+  bind("changeSetup","onclick",()=>{ const p=activeProject(); if(p){ p.gdoc.docUrl=""; p.gdoc.docId=""; p.gdoc.error=""; saveState(); render(); } });
+  bind("copyScript","onclick",async()=>{ try{ await navigator.clipboard.writeText(APPS_SCRIPT); toast("Code copied — paste it into Apps Script"); }catch(_){ const el=$("#gsCode"); if(el){el.style.display="block"; const r=document.createRange(); r.selectNodeContents(el); const s=getSelection(); s.removeAllRanges(); s.addRange(r);} toast("Select the code and copy"); } });
+  const as=$("#autosync"); if(as) as.addEventListener("change",e=>{ const p=activeProject(); if(p){ p.gdoc.autosync=e.target.checked; saveState(); } });
+}
+
+/* ============ global wiring ============ */
+$("#newProj").onclick=createProject;
+$("#settingsBtn").onclick=openSettings;
+$("#resetBtn").onclick=async()=>{
+  if(!confirm("Delete ALL projects and notes permanently?")) return;
+  releaseMic();
+  state={projects:[],activeId:null,gdocEndpoint:state.gdocEndpoint||""};
+  try{ await store.del(KEY);}catch(e){}
+  saveState(); render(); toast("All data cleared");
+};
+$("#menuBtn").onclick=()=>{ $("#side").classList.toggle("open"); $("#scrim").classList.toggle("open"); };
+$("#scrim").onclick=closeSide;
+function closeSide(){ $("#side").classList.remove("open"); $("#scrim").classList.remove("open"); }
+window.addEventListener("beforeunload",()=>{ releaseMic(); });
+
+/* ============ boot ============ */
+(async function(){
+  await loadState();
+  if(!state.activeId && state.projects.length) state.activeId=state.projects[0].id;
+  render();
+})();
+
+/* Register service worker so the app is installable as a desktop app.
+   Guarded: only runs when served over http(s)/localhost, not file://. */
+if("serviceWorker" in navigator && location.protocol.startsWith("http")){
+  window.addEventListener("load",()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); });
+}
+</script>
+</body>
+</html>
