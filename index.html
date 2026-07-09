@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chime Scribe — R&D Log</title>
+<title>Smart Scribe — Notes</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0E1B21">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Chime Scribe">
+<meta name="apple-mobile-web-app-title" content="Smart Scribe">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -222,15 +222,17 @@
 <div class="app">
   <aside class="side" id="side">
     <div class="brand">
-      <h1>Chime Scribe</h1>
-      <div class="sub">R&amp;D Note Log</div>
+      <h1>Smart Scribe</h1>
+      <div class="sub">Notes</div>
     </div>
     <div class="side-head"><span>Projects</span><span id="projCount">—</span></div>
     <div class="proj-list" id="projList"></div>
     <button class="new-btn" id="newProj">＋ New project</button>
     <div class="side-foot">
+      <button class="link-btn" id="updateBtn">⬆ Update software</button>
       <button class="link-btn" id="settingsBtn">⚙ Settings (voice engine &amp; key)</button>
       <button class="link-btn" id="resetBtn">⟲ Reset all data</button>
+      <div style="font-family:var(--mono);font-size:10px;color:#5f767e;letter-spacing:.05em;margin-top:2px">Smart Scribe v1.0.0</div>
     </div>
   </aside>
 
@@ -271,7 +273,7 @@ function writeDoc_(data) {
   var body = doc.getBody();
 
   if (data.verify) {
-    body.appendParagraph('\u2713 Chime Scribe connected \u2014 ' + new Date().toLocaleString())
+    body.appendParagraph('\u2713 Smart Scribe connected \u2014 ' + new Date().toLocaleString())
         .editAsText().setForegroundColor('#2b6c78');
     return { ok: true, verify: true };
   }
@@ -318,14 +320,15 @@ function eraseEntry_(doc, id) {
 
 /* ============ persistence ============ */
 const KEY = "chimescribe:data:v3";
+const APP_VERSION = "1.0.0";
+const UPDATE_REPO = "alexandersellers-hue/Chime-Scribe";
 let state = { projects: [], activeId: null, gdocEndpoint: "", cloudKey: "", voiceEngine: "auto" };
 let ui = { draftType: "obs", refOpen: true };
 
 const TYPES = {
-  obs:  { label:"Observation",     tag:"tag-obs"  },
-  tech: { label:"Technical data",  tag:"tag-tech" },
-  proc: { label:"Procedure change",tag:"tag-proc" },
-  gen:  { label:"General note",    tag:"tag-gen"  },
+  obs:  { label:"Observation",    tag:"tag-obs"  },
+  meet: { label:"Meeting Scribe", tag:"tag-tech" },
+  gen:  { label:"General Note",   tag:"tag-gen"  },
 };
 const newGdoc = () => ({ docUrl:"", docId:"", autosync:true, pushed:[], lastSync:0, error:"" });
 
@@ -455,7 +458,6 @@ function addNote(text, type){
   if(!p.recording){ toast("Press “Note Taking Start” first"); return false; }
   const note={ id:uid(), seq:p.notes.length+1, type:type||"gen", text, ts:Date.now() };
   p.notes.push(note); saveState();
-  maybePush(note);
   return true;
 }
 function eraseLast(){
@@ -523,26 +525,20 @@ function syncInfo(p){
 function chipHTML(p){
   const {g,linked,unsynced}=syncInfo(p);
   if(g.error) return `<span class="sync-chip sync-err">sync error</span>`;
-  if(linked)  return `<span class="sync-chip sync-on">● live sync${unsynced?` · ${unsynced} pending`:""}</span>`;
+  if(linked)  return `<span class="sync-chip sync-on">● ready${unsynced?` · ${unsynced} new`:""}</span>`;
   return `<span class="sync-chip sync-off">not connected</span>`;
 }
 function noteHTML(p){
   const {g,linked,unsynced}=syncInfo(p);
-  if(!linked) return "Add your sync endpoint and link a Doc to push entries automatically.";
+  if(!linked) return "Connect your Doc, then use the Push button to add notes whenever you want.";
   if(g.error) return `<span style="color:var(--rust)">${esc(g.error)}</span>`;
-  if(g.lastSync) return `Last push ${stamp(new Date(g.lastSync))}${unsynced?` · ${unsynced} entr${unsynced===1?"y":"ies"} not yet pushed`:" · all entries pushed"}.`;
-  return "Linked. Entries will push to your Doc as you log them.";
+  if(g.lastSync) return `Last pushed ${stamp(new Date(g.lastSync))}${unsynced?` · ${unsynced} new note${unsynced===1?"":"s"} not in the Doc yet`:" · Doc is up to date"}.`;
+  return "Connected. Press “Push new notes to Doc” whenever you want to update it.";
 }
 function updateSyncUI(){
   const p=activeProject(); if(!p) return;
   const c=$("#syncChip"); if(c) c.innerHTML=chipHTML(p);
   const n=$("#syncNote"); if(n) n.innerHTML=noteHTML(p);
-}
-function maybePush(note){
-  const p=activeProject(); if(!p) return;
-  const {ep,g}=syncInfo(p);
-  if(!ep || !g.docId || !g.autosync) return;
-  postEntries([note], {quiet:false});
 }
 
 /* JSONP call — lets us actually READ Google's reply (success or failure). */
@@ -601,18 +597,23 @@ function saveEndpoint(){
   const g=activeProject()?.gdoc;
   if(g && g.docId) verifySync(); else toast("Saved. Now do Step 3 (paste your Google Doc link).");
 }
-function pushAll(){
+function pushNew(){
   const p=activeProject(); if(!p) return;
   const {ep,g}=syncInfo(p);
   if(!ep || !g.docId){ toast("Finish the quick setup first"); return; }
-  let list=p.notes.filter(n=>!g.pushed.includes(n.id));
-  if(!list.length){
-    if(!confirm("Everything's already in the Doc. Add the whole log again anyway?")) return;
-    list=p.notes;
-  }
-  if(!list.length){ toast("No notes to add yet"); return; }
-  toast(`Adding ${list.length} entr${list.length===1?"y":"ies"}…`);
+  const list=p.notes.filter(n=>!g.pushed.includes(n.id));
+  if(!list.length){ toast("Your Doc is already up to date — nothing new to add."); return; }
+  toast(`Adding ${list.length} new entr${list.length===1?"y":"ies"}…`);
   postEntries(list);
+}
+function resendAll(){
+  const p=activeProject(); if(!p) return;
+  const {ep,g}=syncInfo(p);
+  if(!ep || !g.docId){ toast("Finish the quick setup first"); return; }
+  if(!p.notes.length){ toast("No notes to add yet"); return; }
+  if(!confirm("Add the ENTIRE log to the Doc again? Notes already in the Doc will appear twice.")) return;
+  toast(`Adding ${p.notes.length} entr${p.notes.length===1?"y":"ies"}…`);
+  postEntries(p.notes);
 }
 async function verifySync(){
   const p=activeProject(); const {ep,g}=syncInfo(p);
@@ -633,7 +634,7 @@ async function verifySync(){
 /* ============ export ("Complete note") ============ */
 function buildExport(p){
   const now=new Date(), L=[];
-  L.push("ULTRASONIC CHIME INSPECTION — R&D LOG");
+  L.push("SMART SCRIBE — NOTES");
   L.push("Project: "+p.name);
   L.push("Exported: "+stamp(now)+(p.exportCount>0?"  (revision "+(p.exportCount+1)+")":""));
   L.push("Total entries: "+p.notes.length);
@@ -651,7 +652,7 @@ function buildExport(p){
 }
 function buildExportHTML(p){
   const now=new Date();
-  let h=`<h1>Ultrasonic Chime Inspection — R&amp;D Log</h1>`;
+  let h=`<h1>Smart Scribe — Notes</h1>`;
   h+=`<p><b>Project:</b> ${esc(p.name)}<br><b>Exported:</b> ${stamp(now)}`;
   if(p.exportCount>0) h+=` (revision ${p.exportCount+1})`;
   h+=`<br><b>Total entries:</b> ${p.notes.length}</p><hr>`;
@@ -837,6 +838,51 @@ function releaseMic(){
   if(voice.stream){ voice.stream.getTracks().forEach(t=>{try{t.stop();}catch(_){}}); voice.stream=null; }
 }
 function toggleListening(){ voice.listening ? (stopListening(), render()) : startListening(); }
+
+/* ---- in-app updater (checks GitHub Releases) ---- */
+function parseVer(s){ return (s||"").replace(/^v/i,"").split(".").map(n=>parseInt(n,10)||0); }
+function isNewer(a,b){ const A=parseVer(a),B=parseVer(b); for(let i=0;i<Math.max(A.length,B.length);i++){ const x=A[i]||0,y=B[i]||0; if(x!==y) return x>y; } return false; }
+async function checkForUpdate(){
+  toast("Checking for updates…");
+  try{
+    const r=await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`,{headers:{"Accept":"application/vnd.github+json"}});
+    if(r.status===404){ toast("No published release found yet."); return; }
+    if(!r.ok){ toast("Couldn't check for updates (network)."); return; }
+    const rel=await r.json();
+    const latest=(rel.tag_name||"").replace(/^v/i,"");
+    if(!latest || !isNewer(latest, APP_VERSION)){ toast(`You're on the latest version (v${APP_VERSION}).`); return; }
+    const ua=navigator.userAgent||"";
+    const isWin=/windows/i.test(ua), isMac=/mac/i.test(ua);
+    const assets=rel.assets||[];
+    let asset = isWin ? assets.find(a=>/\.exe$/i.test(a.name))
+              : isMac ? assets.find(a=>/\.dmg$/i.test(a.name))
+              : assets.find(a=>/\.(exe|dmg|appimage)$/i.test(a.name));
+    if(!asset) asset = assets.find(a=>/\.(exe|dmg|appimage)$/i.test(a.name));
+    showUpdateModal(latest, asset ? asset.browser_download_url : (rel.html_url||`https://github.com/${UPDATE_REPO}/releases/latest`), !!asset);
+  }catch(e){ toast("Couldn't check for updates. Check your internet."); }
+}
+function showUpdateModal(latest, url, haveInstaller){
+  const old=$("#updateOverlay"); if(old) old.remove();
+  const wrap=document.createElement("div"); wrap.className="modal-overlay"; wrap.id="updateOverlay";
+  wrap.innerHTML=`<div class="modal">
+    <div class="modal-head"><h3>Update available</h3><button class="modal-x" id="upX">×</button></div>
+    <div class="modal-body">
+      <p style="margin:0 0 8px">A new version <b>v${esc(latest)}</b> is available. You have <b>v${APP_VERSION}</b>.</p>
+      <p style="margin:0;color:var(--ink-soft);font-size:13px">${haveInstaller
+        ? "Click Download — the new installer downloads in your browser. When it finishes, close Smart Scribe and run it (it installs over this version)."
+        : "Click Download to open the releases page, then grab the installer for your system."}</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="upLater">Later</button>
+      <button class="btn btn-steel" id="upGo">Download update</button>
+    </div>
+  </div>`;
+  document.body.appendChild(wrap);
+  const close=()=>wrap.remove();
+  $("#upX").onclick=close; $("#upLater").onclick=close;
+  wrap.addEventListener("click",e=>{ if(e.target===wrap) close(); });
+  $("#upGo").onclick=()=>{ window.open(url,"_blank","noopener"); close(); toast("Downloading… run the installer when it finishes."); };
+}
 
 /* ---- settings modal (voice engine + cloud key) ---- */
 function openSettings(){
@@ -1048,25 +1094,22 @@ function render(){
     <div class="log-head"><h3>Session log</h3><span class="log-count">${p.notes.length} total</span></div>
     <div class="log">${notesHTML}</div>
 
-    <!-- GOOGLE DOCS LIVE SYNC -->
+    <!-- GOOGLE DOC EXPORT -->
     <div class="panel" id="gdocPanel">
       <div class="panel-head">
-        <h3>Live Google Doc</h3>
+        <h3>Google Doc export</h3>
         <span id="syncChip">${chipHTML(p)}</span>
       </div>
       <div class="panel-body">
       ${ linked && !g.error ? `
         <div class="connected">
-          <div class="connected-line">✓ Connected. Everything you log — typed or spoken — is added to your Google Doc automatically.</div>
+          <div class="connected-line">✓ Connected. Press the button to add your notes to your Google Doc whenever you want.</div>
           <div class="gdoc-actions">
-            <a class="btn btn-steel" href="${esc(g.docUrl)}" target="_blank" rel="noopener">Open my Google Doc</a>
-            <button class="btn btn-ghost" id="pushAll">Re-send all notes</button>
+            <button class="btn btn-steel" id="pushNew">⬆ Push new notes to Doc</button>
+            <a class="btn btn-ghost" href="${esc(g.docUrl)}" target="_blank" rel="noopener">Open my Google Doc</a>
+            <button class="btn btn-ghost" id="resendAll">Re-send everything</button>
             <button class="btn btn-ghost" id="verifyBtn">Test</button>
             <button class="btn btn-ghost" id="changeSetup">Change setup</button>
-          </div>
-          <div class="toggle-row" style="margin-top:12px">
-            <input type="checkbox" id="autosync" ${g.autosync?"checked":""}>
-            <label for="autosync">Add each note to the Doc the moment I log it</label>
           </div>
           <div class="gdoc-note" id="syncNote">${noteHTML(p)}</div>
         </div>
@@ -1167,17 +1210,18 @@ function wireMain(){
   // google docs
   bind("epSave","onclick",saveEndpoint);
   bind("docLink","onclick",()=>connectDoc($("#docInput").value.trim()));
-  bind("pushAll","onclick",pushAll);
+  bind("pushNew","onclick",pushNew);
+  bind("resendAll","onclick",resendAll);
   bind("verifyBtn","onclick",verifySync);
   bind("openScript","onclick",()=>window.open("https://script.google.com/home/projects/create","_blank","noopener"));
   bind("viewCode","onclick",()=>{ const el=$("#gsCode"); if(el) el.style.display = el.style.display==="none" ? "block" : "none"; });
   bind("changeSetup","onclick",()=>{ const p=activeProject(); if(p){ p.gdoc.docUrl=""; p.gdoc.docId=""; p.gdoc.error=""; saveState(); render(); } });
   bind("copyScript","onclick",async()=>{ try{ await navigator.clipboard.writeText(APPS_SCRIPT); toast("Code copied — paste it into Apps Script"); }catch(_){ const el=$("#gsCode"); if(el){el.style.display="block"; const r=document.createRange(); r.selectNodeContents(el); const s=getSelection(); s.removeAllRanges(); s.addRange(r);} toast("Select the code and copy"); } });
-  const as=$("#autosync"); if(as) as.addEventListener("change",e=>{ const p=activeProject(); if(p){ p.gdoc.autosync=e.target.checked; saveState(); } });
 }
 
 /* ============ global wiring ============ */
 $("#newProj").onclick=createProject;
+$("#updateBtn").onclick=checkForUpdate;
 $("#settingsBtn").onclick=openSettings;
 $("#resetBtn").onclick=async()=>{
   if(!confirm("Delete ALL projects and notes permanently?")) return;
