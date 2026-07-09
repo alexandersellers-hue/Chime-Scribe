@@ -239,7 +239,7 @@
       <button class="link-btn" id="updateBtn">⬆ Update software</button>
       <button class="link-btn" id="settingsBtn">⚙ Settings (voice engine &amp; key)</button>
       <button class="link-btn" id="resetBtn">⟲ Reset all data</button>
-      <div style="font-family:var(--mono);font-size:10px;color:#5f767e;letter-spacing:.05em;margin-top:2px">Smart Scribe v1.1.0</div>
+      <div style="font-family:var(--mono);font-size:10px;color:#5f767e;letter-spacing:.05em;margin-top:2px">Smart Scribe v1.1.1</div>
     </div>
   </aside>
 
@@ -327,7 +327,7 @@ function eraseEntry_(doc, id) {
 
 /* ============ persistence ============ */
 const KEY = "chimescribe:data:v3";
-const APP_VERSION = "1.1.0";
+const APP_VERSION = "1.1.1";
 const UPDATE_REPO = "alexandersellers-hue/Chime-Scribe";
 let state = { projects: [], activeId: null, gdocEndpoint: "", cloudKey: "", voiceEngine: "auto" };
 let ui = { draftType: "obs", refOpen: true };
@@ -917,25 +917,39 @@ async function checkForUpdate(){
 }
 function showUpdateModal(latest, url, haveInstaller){
   const old=$("#updateOverlay"); if(old) old.remove();
+  const canAuto = !!(window.smartScribe && window.smartScribe.downloadAndRun && haveInstaller);
   const wrap=document.createElement("div"); wrap.className="modal-overlay"; wrap.id="updateOverlay";
   wrap.innerHTML=`<div class="modal">
     <div class="modal-head"><h3>Update available</h3><button class="modal-x" id="upX">×</button></div>
     <div class="modal-body">
       <p style="margin:0 0 8px">A new version <b>v${esc(latest)}</b> is available. You have <b>v${APP_VERSION}</b>.</p>
-      <p style="margin:0;color:var(--ink-soft);font-size:13px">${haveInstaller
-        ? "Click Download — the new installer downloads in your browser. When it finishes, close Smart Scribe and run it (it installs over this version)."
-        : "Click Download to open the releases page, then grab the installer for your system."}</p>
+      <p style="margin:0;color:var(--ink-soft);font-size:13px">${
+        canAuto
+          ? "Click Update — it downloads and launches the installer automatically, then Smart Scribe restarts on the new version. Approve the one-time Windows prompt if it appears."
+          : haveInstaller
+            ? "Click Download — the installer downloads in your browser. When it finishes, close Smart Scribe and run it (it installs over this version)."
+            : "Click Download to open the releases page, then grab the installer for your system."}</p>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" id="upLater">Later</button>
-      <button class="btn btn-steel" id="upGo">Download update</button>
+      <button class="btn btn-steel" id="upGo">${canAuto?"Update now":"Download update"}</button>
     </div>
   </div>`;
   document.body.appendChild(wrap);
   const close=()=>wrap.remove();
   $("#upX").onclick=close; $("#upLater").onclick=close;
   wrap.addEventListener("click",e=>{ if(e.target===wrap) close(); });
-  $("#upGo").onclick=()=>{ window.open(url,"_blank","noopener"); close(); toast("Downloading… run the installer when it finishes."); };
+  $("#upGo").onclick=async ()=>{
+    if(canAuto){
+      const btn=$("#upGo"); btn.disabled=true; $("#upLater").disabled=true; btn.textContent="Downloading… 0%";
+      if(window.smartScribe.onUpdateProgress){ window.smartScribe.onUpdateProgress(pct=>{ if(btn) btn.textContent=`Downloading… ${pct}%`; }); }
+      let res=null; try{ res=await window.smartScribe.downloadAndRun(url); }catch(_){ res={ok:false}; }
+      if(res && res.ok){ btn.textContent="Installing…"; toast("Installer launched — approve any Windows prompt, then it restarts."); }
+      else { btn.disabled=false; $("#upLater").disabled=false; btn.textContent="Download update"; toast("Auto-update failed — opening the download in your browser."); window.open(url,"_blank","noopener"); }
+    } else {
+      window.open(url,"_blank","noopener"); close(); toast("Downloading… run the installer when it finishes.");
+    }
+  };
 }
 
 /* ---- settings modal (voice engine + cloud key) ---- */
