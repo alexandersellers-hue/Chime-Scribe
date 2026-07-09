@@ -239,7 +239,7 @@
       <button class="link-btn" id="updateBtn">⬆ Update software</button>
       <button class="link-btn" id="settingsBtn">⚙ Settings (voice engine &amp; key)</button>
       <button class="link-btn" id="resetBtn">⟲ Reset all data</button>
-      <div style="font-family:var(--mono);font-size:10px;color:#5f767e;letter-spacing:.05em;margin-top:2px">Smart Scribe v1.1.1</div>
+      <div style="font-family:var(--mono);font-size:10px;color:#5f767e;letter-spacing:.05em;margin-top:2px">Smart Scribe v1.1.2</div>
     </div>
   </aside>
 
@@ -253,83 +253,11 @@
 <div class="toast" id="toast"></div>
 
 <script>
-/* ============ apps script (shown in the setup panel) ============ */
-const APPS_SCRIPT = `function doGet(e)  { return handle_(e, true);  }
-function doPost(e) { return handle_(e, false); }
-
-function handle_(e, isGet) {
-  var cb = (e && e.parameter) ? e.parameter.callback : null;
-  var out;
-  try {
-    var data = isGet ? JSON.parse(e.parameter.data || '{}') : JSON.parse(e.postData.contents);
-    out = writeDoc_(data);
-  } catch (err) {
-    out = { ok: false, error: String(err) };
-  }
-  if (cb) {
-    return ContentService.createTextOutput(cb + '(' + JSON.stringify(out) + ')')
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
-  }
-  return ContentService.createTextOutput(JSON.stringify(out))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-function writeDoc_(data) {
-  if (!data.docId) return { ok: false, error: 'No document linked' };
-  var doc = DocumentApp.openById(data.docId);
-  var body = doc.getBody();
-
-  if (data.verify) {
-    body.appendParagraph('\u2713 Smart Scribe connected \u2014 ' + new Date().toLocaleString())
-        .editAsText().setForegroundColor('#2b6c78');
-    return { ok: true, verify: true };
-  }
-
-  if (data.eraseIds && data.eraseIds.length) {
-    var removed = 0;
-    data.eraseIds.forEach(function (id) { if (eraseEntry_(doc, id)) removed++; });
-    return { ok: true, erased: removed };
-  }
-
-  var entries = data.entries || (data.entry ? [data.entry] : []);
-  entries.forEach(function (en) {
-    var h = body.appendParagraph('Entry ' + en.seq + '  \u00B7  ' + en.type);
-    h.setHeading(DocumentApp.ParagraphHeading.HEADING3);
-    var m = body.appendParagraph('Logged: ' + en.logged);
-    m.editAsText().setForegroundColor('#666666').setFontSize(9);
-    var t = body.appendParagraph(en.text);
-    var sp = body.appendParagraph('');
-    if (en.id) {
-      try {
-        var range = doc.newRange()
-          .addElement(h).addElement(m).addElement(t).addElement(sp).build();
-        doc.addNamedRange('cs_' + en.id, range);
-      } catch (e2) {}
-    }
-  });
-  return { ok: true, added: entries.length };
-}
-
-function eraseEntry_(doc, id) {
-  var ranges = doc.getNamedRanges('cs_' + id);
-  if (!ranges || !ranges.length) return false;
-  ranges.forEach(function (nr) {
-    var els = nr.getRange().getRangeElements();
-    for (var i = els.length - 1; i >= 0; i--) {
-      try { els[i].getElement().removeFromParent(); } catch (e3) {}
-    }
-    try { nr.remove(); } catch (e4) {}
-  });
-  var body = doc.getBody();
-  if (body.getNumChildren() === 0) body.appendParagraph('');
-  return true;
-}`;
-
 /* ============ persistence ============ */
 const KEY = "chimescribe:data:v3";
-const APP_VERSION = "1.1.1";
+const APP_VERSION = "1.1.2";
 const UPDATE_REPO = "alexandersellers-hue/Chime-Scribe";
-let state = { projects: [], activeId: null, gdocEndpoint: "", cloudKey: "", voiceEngine: "auto" };
+let state = { projects: [], activeId: null, cloudKey: "", voiceEngine: "auto" };
 let ui = { draftType: "obs", refOpen: true };
 
 const TYPES = {
@@ -341,8 +269,6 @@ const TYPES = {
 // Modes that use multi-speaker (diarized) transcription:
 const DIARIZE_MODES = new Set(["meet","conv"]);
 const MAX_SPEAKERS = 30;
-const newGdoc = () => ({ docUrl:"", docId:"", autosync:true, pushed:[], lastSync:0, error:"" });
-
 /* Storage adapter: uses Claude.ai artifact storage when present,
    otherwise the browser's localStorage (downloaded file), otherwise memory. */
 const store = (function(){
@@ -377,12 +303,9 @@ async function loadState(){
     if(raw){ state = JSON.parse(raw); }
   }catch(e){ /* first run or unreadable: start fresh */ }
   if(!state.projects) state.projects = [];
-  if(typeof state.gdocEndpoint !== "string") state.gdocEndpoint = "";
   if(typeof state.cloudKey !== "string") state.cloudKey = "";
   if(typeof state.voiceEngine !== "string") state.voiceEngine = "auto";
   state.projects.forEach(p=>{
-    if(!p.gdoc) p.gdoc = newGdoc();
-    if(!Array.isArray(p.gdoc.pushed)) p.gdoc.pushed = [];
     if(!p.speakers || typeof p.speakers!=="object") p.speakers = {};
   });
 }
@@ -415,7 +338,7 @@ function createProject(){
   askText("New project", "Name your project", "Chime Inspection — Trial "+(state.projects.length+1), "Create", (name)=>{
     name=(name||"").trim();
     if(!name) return;
-    const p={ id:uid(), name, createdAt:Date.now(), recording:false, notes:[], draft:"", exportCount:0, exportText:"", exportedAt:0, gdoc:newGdoc(), speakers:{} };
+    const p={ id:uid(), name, createdAt:Date.now(), recording:false, notes:[], draft:"", speakers:{} };
     state.projects.unshift(p); state.activeId=p.id; saveState(); render();
   });
 }
@@ -475,12 +398,9 @@ function addNote(text, type){
 function eraseLast(){
   const p=activeProject(); if(!p||!p.notes.length){ toast("No notes to erase"); return false; }
   const last=p.notes[p.notes.length-1];
-  const wasInDoc = p.gdoc.pushed.includes(last.id);
   p.notes.pop();
-  p.gdoc.pushed = p.gdoc.pushed.filter(id=>id!==last.id);
   saveState();
   toast(`Erased entry ${String(last.seq).padStart(3,"0")}`);
-  if(wasInDoc) syncErase([last.id]);
   return true;
 }
 function eraseLastConfirm(){
@@ -491,23 +411,8 @@ function eraseLastConfirm(){
 }
 function deleteNote(id){
   const p=activeProject(); if(!p) return;
-  const wasInDoc = p.gdoc.pushed.includes(id);
   p.notes=p.notes.filter(n=>n.id!==id).map((n,i)=>({...n,seq:i+1}));
-  p.gdoc.pushed=p.gdoc.pushed.filter(x=>x!==id);
   saveState(); render();
-  if(wasInDoc) syncErase([id]);
-}
-async function syncErase(ids){
-  const p=activeProject(); if(!p) return;
-  const {ep,g}=syncInfo(p);
-  if(!ep || !g.docId) return;
-  try{
-    const resp=await callSync({ docId:g.docId, eraseIds:ids });
-    if(resp && resp.ok && resp.erased>0){ g.error=""; toast("✓ Removed from your Google Doc"); }
-    else if(resp && resp.ok){ toast("Erased here. (That entry predates doc-erase, so it stays in the Doc.)"); }
-    else { g.error=(resp&&resp.error)||"Couldn't remove it from the Doc."; toast("Erased here, but the Doc entry couldn't be removed."); }
-  }catch(e){ toast("Erased here; couldn't reach the Doc to remove it."); }
-  saveState(); updateSyncUI();
 }
 
 /* ============ draft persistence ============ */
@@ -517,155 +422,12 @@ function setDraft(text,{dom=true}={}){
   if(dom){ const el=$("#noteIn"); if(el && el.value!==text) el.value=text; }
 }
 
-/* ============ Google Docs live sync ============ */
-function parseDocId(url){
-  if(!url) return "";
-  const m = url.match(/\/d\/([A-Za-z0-9_-]{20,})/);
-  if(m) return m[1];
-  if(/^[A-Za-z0-9_-]{20,}$/.test(url.trim())) return url.trim();
-  return "";
-}
-/* ---- speaker labels (diarization) ---- */
-function speakerName(p, n){
-  const custom = p && p.speakers ? p.speakers[String(n)] : null;
-  return (custom && custom.trim()) ? custom.trim() : ("Person " + (n+1));
-}
-function detectedSpeakers(p){
-  const set = new Set();
-  const scan = (t)=>{ const re=/\[\[spk:(\d+)\]\]/g; let m; while((m=re.exec(t||""))!==null){ const n=parseInt(m[1],10); if(n>=0 && n<MAX_SPEAKERS) set.add(n); } };
-  (p.notes||[]).forEach(n=>scan(n.text));
-  scan(p.draft);
-  Object.keys(p.speakers||{}).forEach(k=>{ const n=parseInt(k,10); if(!isNaN(n)) set.add(n); });
-  return Array.from(set).sort((a,b)=>a-b).slice(0, MAX_SPEAKERS);
-}
-function hasSpeakers(p){ return detectedSpeakers(p).length>0; }
-// Resolve [[spk:N]] markers to "Name: " (for plain text / export)
-function resolveSpeakers(p, text){
-  return (text||"").replace(/\[\[spk:(\d+)\]\]\s*/g, (m,n)=> speakerName(p, parseInt(n,10)) + ": ");
-}
-// Render a note body to HTML with bold speaker labels
-function renderNoteBody(p, text){
-  let h = esc(text||"");
-  h = h.replace(/\[\[spk:(\d+)\]\]\s*/g, (m,n)=> `<span class="spk">${esc(speakerName(p, parseInt(n,10)))}:</span> `);
-  return h.replace(/\n/g, "<br>");
-}
-
-function fmtEntry(n){
-  const p=activeProject();
-  return { id:n.id, seq:String(n.seq).padStart(3,"0"), type:TYPES[n.type]?.label||"Note", logged:stamp(new Date(n.ts)), text:resolveSpeakers(p, n.text) };
-}
-function syncInfo(p){
-  const ep=state.gdocEndpoint||"", g=p.gdoc||newGdoc();
-  const linked=!!(ep && g.docId);
-  const unsynced=p.notes.filter(n=>!(g.pushed||[]).includes(n.id)).length;
-  return {ep,g,linked,unsynced};
-}
-function chipHTML(p){
-  const {g,linked,unsynced}=syncInfo(p);
-  if(g.error) return `<span class="sync-chip sync-err">sync error</span>`;
-  if(linked)  return `<span class="sync-chip sync-on">● ready${unsynced?` · ${unsynced} new`:""}</span>`;
-  return `<span class="sync-chip sync-off">not connected</span>`;
-}
-function noteHTML(p){
-  const {g,linked,unsynced}=syncInfo(p);
-  if(!linked) return "Connect your Doc, then use the Push button to add notes whenever you want.";
-  if(g.error) return `<span style="color:var(--rust)">${esc(g.error)}</span>`;
-  if(g.lastSync) return `Last pushed ${stamp(new Date(g.lastSync))}${unsynced?` · ${unsynced} new note${unsynced===1?"":"s"} not in the Doc yet`:" · Doc is up to date"}.`;
-  return "Connected. Press “Push new notes to Doc” whenever you want to update it.";
-}
-function updateSyncUI(){
-  const p=activeProject(); if(!p) return;
-  const c=$("#syncChip"); if(c) c.innerHTML=chipHTML(p);
-  const n=$("#syncNote"); if(n) n.innerHTML=noteHTML(p);
-}
-
-/* JSONP call — lets us actually READ Google's reply (success or failure). */
-function callSync(payloadObj){
-  return new Promise((resolve,reject)=>{
-    const ep=(state.gdocEndpoint||"").trim();
-    if(!ep) return reject(new Error("no-endpoint"));
-    const cb="__cs_cb_"+Math.random().toString(36).slice(2);
-    const s=document.createElement("script");
-    let done=false;
-    const cleanup=()=>{ try{delete window[cb];}catch(_){window[cb]=undefined;} if(s.parentNode)s.parentNode.removeChild(s); clearTimeout(timer); };
-    const timer=setTimeout(()=>{ if(done)return; done=true; cleanup(); reject(new Error("timeout")); }, 15000);
-    window[cb]=(resp)=>{ if(done)return; done=true; cleanup(); resolve(resp); };
-    s.onerror=()=>{ if(done)return; done=true; cleanup(); reject(new Error("network")); };
-    s.src = ep + (ep.includes("?")?"&":"?") + "callback="+cb + "&data="+encodeURIComponent(JSON.stringify(payloadObj));
-    document.head.appendChild(s);
-  });
-}
-async function postEntries(notes, {quiet=false}={}){
-  const p=activeProject(); if(!p) return false;
-  const {ep,g}=syncInfo(p);
-  if(!ep || !g.docId){ toast("Finish the quick setup first"); return false; }
-  let okCount=0, failMsg="";
-  for(const n of notes){
-    try{
-      const resp=await callSync({ docId:g.docId, project:p.name, entries:[fmtEntry(n)] });
-      if(resp && resp.ok){ if(!g.pushed.includes(n.id)) g.pushed.push(n.id); okCount++; }
-      else { failMsg=(resp&&resp.error)||"Google couldn't write to that Doc."; }
-    }catch(e){
-      failMsg = e.message==="timeout"
-        ? "No reply from the connector. Make sure it's deployed with access set to “Anyone.”"
-        : "Couldn't reach the connector link. Double-check the URL you pasted.";
-      break;
-    }
-  }
-  if(okCount>0){ g.lastSync=Date.now(); if(okCount===notes.length) g.error=""; }
-  if(failMsg) g.error=failMsg;
-  saveState(); updateSyncUI();
-  if(!quiet){
-    if(okCount>0 && !failMsg) toast(okCount===1?"✓ Added to your Google Doc":`✓ Added ${okCount} entries to your Doc`);
-    else if(failMsg) toast("Couldn't add to the Doc — see the message in the sync panel.");
-  }
-  return okCount>0;
-}
-function connectDoc(url){
-  const p=activeProject(); if(!p) return;
-  const id=parseDocId(url);
-  if(!id){ toast("That doesn't look like a Google Doc link — paste the whole link from the address bar."); return; }
-  p.gdoc.docUrl=url; p.gdoc.docId=id; p.gdoc.error=""; saveState(); render();
-  if(!state.gdocEndpoint){ toast("Doc saved. Now finish Step 2 (paste the connector link)."); return; }
-  verifySync();
-}
-function saveEndpoint(){
-  state.gdocEndpoint=($("#epInput").value||"").trim(); saveState(); render();
-  if(!state.gdocEndpoint){ toast("Connector link cleared"); return; }
-  const g=activeProject()?.gdoc;
-  if(g && g.docId) verifySync(); else toast("Saved. Now do Step 3 (paste your Google Doc link).");
-}
-function exportAll(){
-  const p=activeProject(); if(!p) return;
-  const {ep,g}=syncInfo(p);
-  if(!ep || !g.docId){ toast("Finish the quick setup first"); return; }
-  if(!p.notes.length){ toast("No notes to export yet"); return; }
-  if(!confirm(`Export all ${p.notes.length} note${p.notes.length===1?"":"s"} to your Google Doc?`)) return;
-  toast(`Exporting ${p.notes.length} note${p.notes.length===1?"":"s"}…`);
-  postEntries(p.notes);
-}
-async function verifySync(){
-  const p=activeProject(); const {ep,g}=syncInfo(p);
-  if(!ep || !g.docId){ toast("Finish the quick setup first"); return; }
-  toast("Testing the connection…");
-  try{
-    const resp=await callSync({ docId:g.docId, verify:true });
-    if(resp && resp.ok){ g.error=""; saveState(); updateSyncUI(); toast("✓ Connected! A test line just went into your Doc."); }
-    else { g.error=(resp&&resp.error)||"Google couldn't write to that Doc — check the Doc link and that the connector can edit it."; saveState(); updateSyncUI(); toast("Almost — see the message in the sync panel."); }
-  }catch(e){
-    g.error = e.message==="timeout"
-      ? "No reply from the connector. In Apps Script, redeploy with “Who has access: Anyone.”"
-      : "Couldn't reach that link. Recheck the connector URL (it should end in /exec).";
-    saveState(); updateSyncUI(); toast("Couldn't reach the connector — see the sync panel.");
-  }
-}
-
 /* ============ export ("Complete note") ============ */
 function buildExport(p){
   const now=new Date(), L=[];
   L.push("SMART SCRIBE — NOTES");
   L.push("Project: "+p.name);
-  L.push("Exported: "+stamp(now)+(p.exportCount>0?"  (revision "+(p.exportCount+1)+")":""));
+  L.push("Exported: "+stamp(now));
   L.push("Total entries: "+p.notes.length);
   L.push("");
   if(!p.notes.length) L.push("(No entries logged yet.)");
@@ -683,7 +445,6 @@ function buildExportHTML(p){
   const now=new Date();
   let h=`<h1>Smart Scribe — Notes</h1>`;
   h+=`<p><b>Project:</b> ${esc(p.name)}<br><b>Exported:</b> ${stamp(now)}`;
-  if(p.exportCount>0) h+=` (revision ${p.exportCount+1})`;
   h+=`<br><b>Total entries:</b> ${p.notes.length}</p><hr>`;
   p.notes.forEach(n=>{
     h+=`<h3>Entry ${String(n.seq).padStart(3,"0")} · ${TYPES[n.type]?.label||"Note"}</h3>`;
@@ -692,43 +453,34 @@ function buildExportHTML(p){
   });
   return h;
 }
-function completeNote(){
+// Copy the full formatted transcript (rich + plain) to the clipboard.
+async function copyTranscript(){
   const p=activeProject(); if(!p) return;
-  if(!p.notes.length){ toast("Log an entry before completing"); return; }
-  p.exportText=buildExport(p);
-  p.exportCount=(p.exportCount||0)+1;
-  p.exportedAt=Date.now();
-  saveState(); render();
-  toast(p.exportCount>1?"Document updated — earlier notes preserved":"Document structured for export");
-  $("#exportPanel")?.scrollIntoView({behavior:"smooth",block:"nearest"});
-}
-async function copyExport(){
-  const p=activeProject(); if(!p||!p.exportText) return;
+  if(!p.notes.length){ toast("Log an entry first"); return; }
+  const plain=buildExport(p), html=buildExportHTML(p);
   try{
     if(navigator.clipboard && window.ClipboardItem){
       await navigator.clipboard.write([ new ClipboardItem({
-        "text/html": new Blob([buildExportHTML(p)],{type:"text/html"}),
-        "text/plain": new Blob([p.exportText],{type:"text/plain"}),
+        "text/html": new Blob([html],{type:"text/html"}),
+        "text/plain": new Blob([plain],{type:"text/plain"}),
       })]);
-    } else { await navigator.clipboard.writeText(p.exportText); }
-    toast("Copied — paste into Google Docs");
+    } else if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(plain);
+    } else { throw new Error("no-clipboard"); }
+    toast("Copied — paste into Google Docs (Ctrl+V)");
   }catch(e){
-    const pre=$("#exportPre");
-    if(pre){ const r=document.createRange(); r.selectNodeContents(pre);
-      const s=getSelection(); s.removeAllRanges(); s.addRange(r);
-      try{ document.execCommand("copy"); toast("Copied — paste into Google Docs"); }
-      catch(_){ toast("Select the text and copy manually"); } }
+    // Fallback: drop the text into a temporary textarea and copy from it.
+    try{
+      const ta=document.createElement("textarea");
+      ta.value=plain; ta.style.position="fixed"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.select();
+      document.execCommand("copy"); document.body.removeChild(ta);
+      toast("Copied — paste into Google Docs (Ctrl+V)");
+    }catch(_){ toast("Couldn't copy automatically — try again"); }
   }
 }
-function downloadExport(){
-  const p=activeProject(); if(!p||!p.exportText) return;
-  const blob=new Blob([p.exportText],{type:"text/plain"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=p.name.replace(/[^\w\-]+/g,"_")+"_log.txt";
-  a.click(); URL.revokeObjectURL(a.href);
-  toast("Downloaded .txt");
-}
+// Kept so the voice/typed command "complete note" still copies the transcript.
+function completeNote(){ copyTranscript(); }
 
 /* ============ voice dictation (persistent / hands-free) ============ */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1040,14 +792,14 @@ function setMicStatus(){
 function refHTML(){
   const typed=[
     ['Note the following: …','Log a new observation (note taking must be on)'],
-    ['Complete note','Structure the log for Google Docs export; re-run to update &amp; keep all prior notes'],
+    ['Complete note','Copy the whole transcript to the clipboard to paste into Google Docs'],
     ['Erase previous note','Delete the most recent entry'],
   ];
   const spoken=[
     ['“Note the following…”','Start dictating an entry; words after the phrase become the note'],
     ['“Log entry”','Immediately save the entry you are dictating and keep going'],
     ['“Save note” / “End note”','Also saves the current entry'],
-    ['“Complete note”','Save the current entry and build the export'],
+    ['“Complete note”','Copy the whole transcript to the clipboard'],
     ['“Erase previous note”','Delete the most recent saved entry'],
     ['“Scratch that”','Clear the entry you are currently dictating'],
   ];
@@ -1073,9 +825,8 @@ function renderSidebar(){
   state.projects.forEach(p=>{
     const b=document.createElement("button");
     b.className="proj"+(p.id===state.activeId?" active":"");
-    const live = state.gdocEndpoint && p.gdoc && p.gdoc.docId;
     b.innerHTML=`<span class="nm">${esc(p.name)}</span>
-      <span class="meta">${p.notes.length} entr${p.notes.length===1?"y":"ies"}${p.recording?" · ● rec":""}${live?" · ⇄ doc":""}</span>`;
+      <span class="meta">${p.notes.length} entr${p.notes.length===1?"y":"ies"}${p.recording?" · ● rec":""}</span>`;
     b.onclick=()=>selectProject(p.id);
     list.appendChild(b);
   });
@@ -1101,17 +852,14 @@ function render(){
   const micUnsupported=!voiceAvailable();
   const needsKey = vmode==="cloud" && !(state.cloudKey||"").trim();
   const micLabel = micUnsupported ? "🎤 Voice N/A" : (voice.listening ? "● Stop dictation" : "🎤 Dictate");
-  const {ep,g,linked}=syncInfo(p);
 
   const notesHTML = p.notes.length
     ? p.notes.map(n=>{
-        const synced = g.pushed.includes(n.id);
         return `<div class="note">
           <button class="note-del" title="Delete entry" onclick="deleteNote('${n.id}')">×</button>
           <div class="note-meta">
             <span class="note-seq">Entry ${String(n.seq).padStart(3,"0")}</span>
             <span class="note-tag ${TYPES[n.type]?.tag||"tag-gen"}">${TYPES[n.type]?.label||"Note"}</span>
-            ${linked&&synced?`<span class="note-sync">⇄ in doc</span>`:""}
             <span class="note-time">${stamp(new Date(n.ts))}</span>
           </div>
           <div class="note-body">${renderNoteBody(p, n.text)}</div>
@@ -1121,10 +869,6 @@ function render(){
 
   const typeTabs=Object.entries(TYPES).map(([k,v])=>
     `<button class="type-tab ${ui.draftType===k?"sel":""}" data-type="${k}">${v.label}</button>`).join("");
-
-  const exportHTML = p.exportText
-    ? `<pre class="export-pre" id="exportPre">${esc(p.exportText)}</pre>`
-    : `<div class="export-empty">Run <b>Complete note</b> for a clean, copy-paste snapshot of the whole log. (For hands-off updates, use live sync above instead.)</div>`;
 
   main.innerHTML = `<div class="wrap">
     ${refHTML()}
@@ -1161,7 +905,6 @@ function render(){
       <textarea class="note-in" id="noteIn" placeholder="${rec?'Type your observation here, or press 🎤 Dictate and speak it. Cmd/Ctrl + Enter logs the entry.':'Note taking is ended — press “Note Taking Start” to log.'}">${esc(p.draft||"")}</textarea>
       <div class="entry-actions">
         <button class="btn btn-primary" id="addBtn">Log entry</button>
-        <button class="btn btn-ghost" id="completeBtn">Complete note</button>
         <button class="btn btn-rust" id="eraseBtn">Erase previous note</button>
       </div>
       ${!rec?`<div class="lock-note">Locked — the scribe only records while note taking is live.</div>`:""}
@@ -1185,87 +928,14 @@ function render(){
       </div>
     </div>` : "" }
 
-    <div class="log-head"><h3>Session log</h3><span class="log-count">${p.notes.length} total</span></div>
+    <div class="log-head">
+      <h3>Session log</h3>
+      <div class="panel-btns">
+        <span class="log-count">${p.notes.length} total</span>
+        <button class="btn btn-steel" id="copyTranscriptBtn" ${p.notes.length?"":"disabled style=opacity:.4"}>📋 Copy transcript</button>
+      </div>
+    </div>
     <div class="log">${notesHTML}</div>
-
-    <!-- GOOGLE DOC EXPORT -->
-    <div class="panel" id="gdocPanel">
-      <div class="panel-head">
-        <h3>Google Doc export</h3>
-        <span id="syncChip">${chipHTML(p)}</span>
-      </div>
-      <div class="panel-body">
-      ${ linked && !g.error ? `
-        <div class="connected">
-          <div class="connected-line">✓ Connected. Click Export All to send every note in this project to your Google Doc.</div>
-          <div class="gdoc-actions">
-            <button class="btn btn-steel" id="exportAll">⬆ Export All to Google Doc</button>
-            <a class="btn btn-ghost" href="${esc(g.docUrl)}" target="_blank" rel="noopener">Open my Google Doc</a>
-            <button class="btn btn-ghost" id="verifyBtn">Test</button>
-            <button class="btn btn-ghost" id="changeSetup">Change setup</button>
-          </div>
-          <div class="gdoc-note" id="syncNote">${noteHTML(p)}</div>
-        </div>
-      ` : `
-        <div class="wiz-intro">Do steps 1–2 once. After that, connecting a Doc to any project is just step 3.</div>
-
-        <div class="step ${state.gdocEndpoint?"done":""}">
-          <div class="step-n">${state.gdocEndpoint?"✓":"1"}</div>
-          <div class="step-body">
-            <div class="step-title">Create the connector <span class="step-once">one time</span></div>
-            <div class="step-text">Opens Google Apps Script. Delete the sample code, paste ours, and hit Save (the 💾 icon).</div>
-            <div class="gdoc-actions">
-              <button class="btn btn-steel" id="openScript">Open Google Apps Script</button>
-              <button class="btn btn-primary" id="copyScript">Copy the code</button>
-              <button class="btn btn-ghost" id="viewCode">View code</button>
-            </div>
-            <pre class="code" id="gsCode" style="display:none">${esc(APPS_SCRIPT)}</pre>
-          </div>
-        </div>
-
-        <div class="step ${state.gdocEndpoint?"done":""}">
-          <div class="step-n">${state.gdocEndpoint?"✓":"2"}</div>
-          <div class="step-body">
-            <div class="step-title">Publish it &amp; paste the link <span class="step-once">one time</span></div>
-            <div class="step-text">In Apps Script: <b>Deploy ▸ New deployment ▸</b> pick <b>Web app</b> ▸ set <b>Execute as: Me</b> and <b>Who has access: Anyone</b> ▸ <b>Deploy</b> ▸ allow access. Copy the <b>Web app URL</b> it shows and paste it here.</div>
-            <div class="field-row">
-              <input class="txt" id="epInput" placeholder="Paste the Web app URL (ends in /exec)" value="${esc(ep)}">
-              <button class="btn btn-steel" id="epSave">Save</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="step ${g.docId?"done":""}">
-          <div class="step-n">${g.docId?"✓":"3"}</div>
-          <div class="step-body">
-            <div class="step-title">Pick this project's Google Doc</div>
-            <div class="step-text">Open (or make) your doc at docs.google.com, copy the link from the address bar, and paste it here.</div>
-            <div class="field-row">
-              <input class="txt" id="docInput" placeholder="Paste your Google Doc link" value="${esc(g.docUrl||"")}">
-              <button class="btn btn-steel" id="docLink" ${state.gdocEndpoint?"":"disabled style=opacity:.4 title='Do step 2 first'"}>Connect</button>
-            </div>
-          </div>
-        </div>
-
-        ${g.error?`<div class="gdoc-err" id="syncNote">${esc(g.error)}</div>`:`<div class="gdoc-note" id="syncNote">${noteHTML(p)}</div>`}
-      `}
-      </div>
-    </div>
-
-    <!-- MANUAL EXPORT (fallback / snapshot) -->
-    <div class="panel" id="exportPanel">
-      <div class="panel-head">
-        <div>
-          <h3>Copy / download snapshot</h3>
-          ${p.exportedAt?`<div class="export-stamp">last built ${stamp(new Date(p.exportedAt))}${p.exportCount>1?` · revision ${p.exportCount}`:""}</div>`:""}
-        </div>
-        <div class="panel-btns">
-          <button class="btn btn-steel" id="copyBtn" ${p.exportText?"":"disabled style=opacity:.4"}>Copy for Google Docs</button>
-          <button class="btn btn-ghost" id="dlBtn" ${p.exportText?"":"disabled style=opacity:.4"}>Download .txt</button>
-        </div>
-      </div>
-      <div>${exportHTML}</div>
-    </div>
   </div>`;
 
   wireMain();
@@ -1306,12 +976,7 @@ function wireMain(){
   });
   bind("completeBtn","onclick",completeNote);
   bind("eraseBtn","onclick",eraseLastConfirm);
-  bind("copyBtn","onclick",copyExport);
-  bind("dlBtn","onclick",downloadExport);
-  // google docs
-  bind("epSave","onclick",saveEndpoint);
-  bind("docLink","onclick",()=>connectDoc($("#docInput").value.trim()));
-  bind("exportAll","onclick",exportAll);
+  bind("copyTranscriptBtn","onclick",copyTranscript);
   document.querySelectorAll(".spk-input").forEach(inp=>{
     const commit=()=>{
       const p=activeProject(); if(!p) return;
@@ -1325,11 +990,6 @@ function wireMain(){
     inp.addEventListener("change", commit);
     inp.addEventListener("keydown", e=>{ if(e.key==="Enter"){ commit(); inp.blur(); } });
   });
-  bind("verifyBtn","onclick",verifySync);
-  bind("openScript","onclick",()=>window.open("https://script.google.com/home/projects/create","_blank","noopener"));
-  bind("viewCode","onclick",()=>{ const el=$("#gsCode"); if(el) el.style.display = el.style.display==="none" ? "block" : "none"; });
-  bind("changeSetup","onclick",()=>{ const p=activeProject(); if(p){ p.gdoc.docUrl=""; p.gdoc.docId=""; p.gdoc.error=""; saveState(); render(); } });
-  bind("copyScript","onclick",async()=>{ try{ await navigator.clipboard.writeText(APPS_SCRIPT); toast("Code copied — paste it into Apps Script"); }catch(_){ const el=$("#gsCode"); if(el){el.style.display="block"; const r=document.createRange(); r.selectNodeContents(el); const s=getSelection(); s.removeAllRanges(); s.addRange(r);} toast("Select the code and copy"); } });
 }
 
 /* ============ global wiring ============ */
@@ -1339,7 +999,7 @@ $("#settingsBtn").onclick=openSettings;
 $("#resetBtn").onclick=async()=>{
   if(!confirm("Delete ALL projects and notes permanently?")) return;
   releaseMic();
-  state={projects:[],activeId:null,gdocEndpoint:state.gdocEndpoint||""};
+  state={projects:[],activeId:null};
   try{ await store.del(KEY);}catch(e){}
   saveState(); render(); toast("All data cleared");
 };
