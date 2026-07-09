@@ -175,6 +175,13 @@
   .step .gdoc-actions{margin-bottom:2px}
   a.btn{text-decoration:none;display:inline-flex;align-items:center}
   .connected .connected-line{font-size:14.5px;color:var(--green);font-weight:500;margin-bottom:14px;line-height:1.5}
+  .spk{font-weight:600;color:var(--steel-dim)}
+  .spk-intro{font-size:13px;color:var(--ink-soft);margin-bottom:12px;line-height:1.55}
+  .spk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+  .spk-row{display:flex;align-items:center;gap:9px}
+  .spk-badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;color:var(--ink-soft);background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:5px 8px;white-space:nowrap;min-width:74px;text-align:center}
+  .spk-input{min-width:0}
+  .note-body .spk{margin-right:2px}
   .gdoc-err{font-family:var(--mono);font-size:11.5px;color:var(--rust);background:#f6e6e2;border:1px solid #e6c6bf;border-radius:8px;padding:10px 12px;margin-top:12px;line-height:1.6}
 
   .field-note{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:6px;line-height:1.6}
@@ -232,7 +239,7 @@
       <button class="link-btn" id="updateBtn">⬆ Update software</button>
       <button class="link-btn" id="settingsBtn">⚙ Settings (voice engine &amp; key)</button>
       <button class="link-btn" id="resetBtn">⟲ Reset all data</button>
-      <div style="font-family:var(--mono);font-size:10px;color:#5f767e;letter-spacing:.05em;margin-top:2px">Smart Scribe v1.0.0</div>
+      <div style="font-family:var(--mono);font-size:10px;color:#5f767e;letter-spacing:.05em;margin-top:2px">Smart Scribe v1.1.0</div>
     </div>
   </aside>
 
@@ -320,16 +327,20 @@ function eraseEntry_(doc, id) {
 
 /* ============ persistence ============ */
 const KEY = "chimescribe:data:v3";
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
 const UPDATE_REPO = "alexandersellers-hue/Chime-Scribe";
 let state = { projects: [], activeId: null, gdocEndpoint: "", cloudKey: "", voiceEngine: "auto" };
 let ui = { draftType: "obs", refOpen: true };
 
 const TYPES = {
-  obs:  { label:"Observation",    tag:"tag-obs"  },
-  meet: { label:"Meeting Scribe", tag:"tag-tech" },
-  gen:  { label:"General Note",   tag:"tag-gen"  },
+  obs:  { label:"Observation",         tag:"tag-obs"  },
+  meet: { label:"Meeting Scribe",      tag:"tag-tech" },
+  conv: { label:"Conversation Scribe", tag:"tag-proc" },
+  gen:  { label:"General Note",        tag:"tag-gen"  },
 };
+// Modes that use multi-speaker (diarized) transcription:
+const DIARIZE_MODES = new Set(["meet","conv"]);
+const MAX_SPEAKERS = 30;
 const newGdoc = () => ({ docUrl:"", docId:"", autosync:true, pushed:[], lastSync:0, error:"" });
 
 /* Storage adapter: uses Claude.ai artifact storage when present,
@@ -372,6 +383,7 @@ async function loadState(){
   state.projects.forEach(p=>{
     if(!p.gdoc) p.gdoc = newGdoc();
     if(!Array.isArray(p.gdoc.pushed)) p.gdoc.pushed = [];
+    if(!p.speakers || typeof p.speakers!=="object") p.speakers = {};
   });
 }
 let saveTimer=null, saveWarned=false;
@@ -403,7 +415,7 @@ function createProject(){
   askText("New project", "Name your project", "Chime Inspection — Trial "+(state.projects.length+1), "Create", (name)=>{
     name=(name||"").trim();
     if(!name) return;
-    const p={ id:uid(), name, createdAt:Date.now(), recording:false, notes:[], draft:"", exportCount:0, exportText:"", exportedAt:0, gdoc:newGdoc() };
+    const p={ id:uid(), name, createdAt:Date.now(), recording:false, notes:[], draft:"", exportCount:0, exportText:"", exportedAt:0, gdoc:newGdoc(), speakers:{} };
     state.projects.unshift(p); state.activeId=p.id; saveState(); render();
   });
 }
@@ -513,8 +525,34 @@ function parseDocId(url){
   if(/^[A-Za-z0-9_-]{20,}$/.test(url.trim())) return url.trim();
   return "";
 }
+/* ---- speaker labels (diarization) ---- */
+function speakerName(p, n){
+  const custom = p && p.speakers ? p.speakers[String(n)] : null;
+  return (custom && custom.trim()) ? custom.trim() : ("Person " + (n+1));
+}
+function detectedSpeakers(p){
+  const set = new Set();
+  const scan = (t)=>{ const re=/\[\[spk:(\d+)\]\]/g; let m; while((m=re.exec(t||""))!==null){ const n=parseInt(m[1],10); if(n>=0 && n<MAX_SPEAKERS) set.add(n); } };
+  (p.notes||[]).forEach(n=>scan(n.text));
+  scan(p.draft);
+  Object.keys(p.speakers||{}).forEach(k=>{ const n=parseInt(k,10); if(!isNaN(n)) set.add(n); });
+  return Array.from(set).sort((a,b)=>a-b).slice(0, MAX_SPEAKERS);
+}
+function hasSpeakers(p){ return detectedSpeakers(p).length>0; }
+// Resolve [[spk:N]] markers to "Name: " (for plain text / export)
+function resolveSpeakers(p, text){
+  return (text||"").replace(/\[\[spk:(\d+)\]\]\s*/g, (m,n)=> speakerName(p, parseInt(n,10)) + ": ");
+}
+// Render a note body to HTML with bold speaker labels
+function renderNoteBody(p, text){
+  let h = esc(text||"");
+  h = h.replace(/\[\[spk:(\d+)\]\]\s*/g, (m,n)=> `<span class="spk">${esc(speakerName(p, parseInt(n,10)))}:</span> `);
+  return h.replace(/\n/g, "<br>");
+}
+
 function fmtEntry(n){
-  return { id:n.id, seq:String(n.seq).padStart(3,"0"), type:TYPES[n.type]?.label||"Note", logged:stamp(new Date(n.ts)), text:n.text };
+  const p=activeProject();
+  return { id:n.id, seq:String(n.seq).padStart(3,"0"), type:TYPES[n.type]?.label||"Note", logged:stamp(new Date(n.ts)), text:resolveSpeakers(p, n.text) };
 }
 function syncInfo(p){
   const ep=state.gdocEndpoint||"", g=p.gdoc||newGdoc();
@@ -597,22 +635,13 @@ function saveEndpoint(){
   const g=activeProject()?.gdoc;
   if(g && g.docId) verifySync(); else toast("Saved. Now do Step 3 (paste your Google Doc link).");
 }
-function pushNew(){
+function exportAll(){
   const p=activeProject(); if(!p) return;
   const {ep,g}=syncInfo(p);
   if(!ep || !g.docId){ toast("Finish the quick setup first"); return; }
-  const list=p.notes.filter(n=>!g.pushed.includes(n.id));
-  if(!list.length){ toast("Your Doc is already up to date — nothing new to add."); return; }
-  toast(`Adding ${list.length} new entr${list.length===1?"y":"ies"}…`);
-  postEntries(list);
-}
-function resendAll(){
-  const p=activeProject(); if(!p) return;
-  const {ep,g}=syncInfo(p);
-  if(!ep || !g.docId){ toast("Finish the quick setup first"); return; }
-  if(!p.notes.length){ toast("No notes to add yet"); return; }
-  if(!confirm("Add the ENTIRE log to the Doc again? Notes already in the Doc will appear twice.")) return;
-  toast(`Adding ${p.notes.length} entr${p.notes.length===1?"y":"ies"}…`);
+  if(!p.notes.length){ toast("No notes to export yet"); return; }
+  if(!confirm(`Export all ${p.notes.length} note${p.notes.length===1?"":"s"} to your Google Doc?`)) return;
+  toast(`Exporting ${p.notes.length} note${p.notes.length===1?"":"s"}…`);
   postEntries(p.notes);
 }
 async function verifySync(){
@@ -645,7 +674,7 @@ function buildExport(p){
     L.push(`Entry ${String(n.seq).padStart(3,"0")}  ·  ${TYPES[n.type]?.label||"Note"}`);
     L.push("Logged: "+stamp(new Date(n.ts)));
     L.push("");
-    L.push(n.text);
+    L.push(resolveSpeakers(p, n.text));
     L.push("");
   });
   return L.join("\n");
@@ -659,7 +688,7 @@ function buildExportHTML(p){
   p.notes.forEach(n=>{
     h+=`<h3>Entry ${String(n.seq).padStart(3,"0")} · ${TYPES[n.type]?.label||"Note"}</h3>`;
     h+=`<p style="color:#666;font-size:.9em"><b>Logged:</b> ${stamp(new Date(n.ts))}</p>`;
-    h+=`<p>${esc(n.text).replace(/\n/g,"<br>")}</p><hr>`;
+    h+=`<p>${esc(resolveSpeakers(p, n.text)).replace(/\n/g,"<br>")}</p><hr>`;
   });
   return h;
 }
@@ -706,7 +735,8 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const IS_ELECTRON = /electron/i.test(navigator.userAgent||"");
 let voice = { mode:null, rec:null, stream:null, listening:false, active:false, capturing:false, interim:"",
               restartTimer:null, watchdog:null, retries:0,
-              ws:null, recorder:null, keepAlive:null, reconnectTimer:null };
+              ws:null, recorder:null, keepAlive:null, reconnectTimer:null,
+              lastSpeaker:null, diarizeActive:false };
 
 /* Which engine to use: Chrome's built-in (free) or cloud (Deepgram). */
 function chosenMode(){
@@ -760,9 +790,26 @@ function startWatchdog(){ stopWatchdog(); voice.watchdog = setInterval(()=>{ if(
 function stopWatchdog(){ if(voice.watchdog){ clearInterval(voice.watchdog); voice.watchdog=null; } }
 
 /* ---- cloud engine (Deepgram streaming) ---- */
+function diarizeWanted(){ return DIARIZE_MODES.has(ui.draftType); }
 function dgUrl(){
-  const q = new URLSearchParams({ model:"nova-2", language:"en-US", smart_format:"true", punctuate:"true", interim_results:"true" });
-  return "wss://api.deepgram.com/v1/listen?"+q.toString();
+  const params = { model:"nova-2", language:"en-US", smart_format:"true", punctuate:"true", interim_results:"true" };
+  if(diarizeWanted()) params.diarize = "true";
+  return "wss://api.deepgram.com/v1/listen?" + new URLSearchParams(params).toString();
+}
+// Turn Deepgram's speaker-tagged words into text with [[spk:N]] markers.
+function wordsToDiarized(words){
+  const segs=[]; let cur=null, buf=[];
+  for(const w of words){
+    let sp = (typeof w.speaker==="number") ? w.speaker : 0;
+    if(sp>MAX_SPEAKERS-1) sp = MAX_SPEAKERS-1;
+    const tok = w.punctuated_word || w.word || "";
+    if(!tok) continue;
+    if(cur===null) cur=sp;
+    if(sp!==cur){ segs.push({sp:cur, text:buf.join(" ")}); cur=sp; buf=[tok]; }
+    else buf.push(tok);
+  }
+  if(buf.length) segs.push({sp:cur, text:buf.join(" ")});
+  return segs.map(s=>`[[spk:${s.sp}]] ${s.text}`).join("\n");
 }
 function stopRecorder(){ if(voice.recorder){ try{ voice.recorder.stop(); }catch(_){}} voice.recorder=null; }
 async function startCloud(){
@@ -770,6 +817,7 @@ async function startCloud(){
   if(!key){ toast("Add your transcription key in Settings to use voice in the desktop app."); openSettings(); voice.listening=false; render(); return; }
   const okMic=await ensureMicStream();
   if(!okMic){ toast("Microphone permission was denied."); voice.listening=false; render(); return; }
+  voice.diarizeActive = diarizeWanted();
   let ws; try{ ws=new WebSocket(dgUrl(), ["token", key]); }catch(e){ toast("Couldn't open the transcription connection."); voice.listening=false; render(); return; }
   voice.ws=ws;
   ws.onopen=()=>{
@@ -788,7 +836,13 @@ async function startCloud(){
     const alt = msg.channel && msg.channel.alternatives && msg.channel.alternatives[0];
     const text = alt ? (alt.transcript||"") : "";
     if(!text) return;
-    if(msg.is_final){ handleFinal(text); voice.interim=""; } else { voice.interim=text; }
+    if(msg.is_final){
+      const dia = (voice.diarizeActive && alt.words && alt.words.length) ? wordsToDiarized(alt.words) : null;
+      handleFinal(text, dia);
+      voice.interim="";
+    } else {
+      voice.interim=text;
+    }
     setMicStatus();
   };
   ws.onerror=()=>{};
@@ -927,34 +981,37 @@ function commitBuffer(){
   const p=activeProject(); if(!p) return false;
   if(voice.capturing && p.draft && p.draft.trim()){
     const ok=addNote(p.draft, ui.draftType);
-    if(ok){ setDraft(""); voice.capturing=false; return true; }
+    if(ok){ setDraft(""); voice.capturing=false; voice.lastSpeaker=null; return true; }
   }
-  voice.capturing=false; return false;
+  voice.capturing=false; voice.lastSpeaker=null; return false;
 }
 function appendSpoken(t){
   const p=activeProject(); if(!p) return;
-  const cur=(p.draft||"").trim();
-  setDraft(cur ? cur+" "+t.trim() : t.trim());
+  t=(t||"").trim(); if(!t) return;
+  const cur=(p.draft||"");
+  // Speaker-labeled segments go on their own lines; plain dictation flows inline.
+  const sep = !cur ? "" : (t.startsWith("[[spk:") || cur.endsWith("\n") ? "\n" : " ");
+  setDraft(cur + sep + t);
 }
-function handleFinal(raw){
+function handleFinal(raw, diarized){
   const clean = raw.toLowerCase().replace(/[.,!?;:'"]/g,"").replace(/\s+/g," ").trim();
 
   if(/\b(complete note|complete the note|export the note|export note)\b/.test(clean)){ commitBuffer(); completeNote(); return; }
-  if(/\b(erase|delete|remove) (the )?previous note\b/.test(clean)){ voice.capturing=false; if(eraseLast()) render(); return; }
-  if(/\b(scratch that|clear (the )?note|discard note)\b/.test(clean)){ setDraft(""); voice.capturing=false; toast("Cleared current entry"); return; }
+  if(/\b(erase|delete|remove) (the )?previous note\b/.test(clean)){ voice.capturing=false; voice.lastSpeaker=null; if(eraseLast()) render(); return; }
+  if(/\b(scratch that|clear (the )?note|discard note)\b/.test(clean)){ setDraft(""); voice.capturing=false; voice.lastSpeaker=null; toast("Cleared current entry"); return; }
   if(/\blog entry\b/.test(clean)){ if(commitBuffer()){ render(); toast("Entry logged"); } else { toast("Say “Note the following…” first"); } return; }
   if(/\b(save note|end note|save (the )?entry)\b/.test(clean)){ if(commitBuffer()){ render(); toast("Entry saved"); } return; }
 
   const idx = clean.indexOf("note the following");
   if(idx !== -1){
     commitBuffer();
-    voice.capturing = true;
+    voice.capturing = true; voice.lastSpeaker=null;
     const oi = raw.toLowerCase().indexOf("note the following");
     let rest = oi!==-1 ? raw.slice(oi + "note the following".length) : "";
     rest = rest.replace(/^[\s:,\-–]+/,"").trim();
     setDraft(rest); render(); return;
   }
-  if(voice.capturing) appendSpoken(raw);
+  if(voice.capturing) appendSpoken(diarized || raw);
 }
 function setMicStatus(){
   const el=$("#micStatus"); if(!el) return;
@@ -1043,7 +1100,7 @@ function render(){
             ${linked&&synced?`<span class="note-sync">⇄ in doc</span>`:""}
             <span class="note-time">${stamp(new Date(n.ts))}</span>
           </div>
-          <div class="note-body">${esc(n.text)}</div>
+          <div class="note-body">${renderNoteBody(p, n.text)}</div>
         </div>`;
       }).join("")
     : `<div class="log-empty">No entries yet. Start note taking, then type or dictate your observations.</div>`;
@@ -1076,7 +1133,12 @@ function render(){
           ? `Cloud voice is selected but no key is set. <a href="#" id="hintSettings" style="color:var(--trace)">Add a Deepgram key in Settings</a> to dictate. Typing works now.`
           : micUnsupported
             ? "Voice needs Chrome/Edge, or set a cloud key in Settings. Typing works everywhere."
-            : `Tip: 🎤 Dictate, then say “Note the following…”, and “log entry” to save. Voice engine: ${vmode==="cloud"?"Cloud (Deepgram)":"Chrome built-in"} · change in Settings.`
+            : `Tip: 🎤 Dictate, then say “Note the following…”, and “log entry” to save. Voice engine: ${vmode==="cloud"?"Cloud (Deepgram)":"Chrome built-in"} · change in Settings.${
+                DIARIZE_MODES.has(ui.draftType)
+                  ? (vmode==="cloud"
+                      ? ` <span style="color:var(--trace)">Multi-speaker labeling is ON for ${esc(TYPES[ui.draftType].label)}.</span>`
+                      : ` <span style="color:var(--amber-dim)">Multi-speaker needs Cloud voice — set a key in Settings.</span>`)
+                  : "" }`
       }</div>
     </div>
 
@@ -1091,6 +1153,24 @@ function render(){
       ${!rec?`<div class="lock-note">Locked — the scribe only records while note taking is live.</div>`:""}
     </div>
 
+    ${ hasSpeakers(p) ? `
+    <div class="panel" id="spkPanel">
+      <div class="panel-head">
+        <h3>Speakers</h3>
+        <span class="sync-chip sync-off">${detectedSpeakers(p).length} detected</span>
+      </div>
+      <div class="panel-body">
+        <div class="spk-intro">Rename the auto-detected speakers. Names apply across every note in this project.</div>
+        <div class="spk-grid">
+          ${detectedSpeakers(p).map(n=>`
+            <div class="spk-row">
+              <span class="spk-badge">Person ${n+1}</span>
+              <input class="txt spk-input" data-spk="${n}" placeholder="Person ${n+1}" value="${esc((p.speakers&&p.speakers[String(n)])||"")}">
+            </div>`).join("")}
+        </div>
+      </div>
+    </div>` : "" }
+
     <div class="log-head"><h3>Session log</h3><span class="log-count">${p.notes.length} total</span></div>
     <div class="log">${notesHTML}</div>
 
@@ -1103,11 +1183,10 @@ function render(){
       <div class="panel-body">
       ${ linked && !g.error ? `
         <div class="connected">
-          <div class="connected-line">✓ Connected. Press the button to add your notes to your Google Doc whenever you want.</div>
+          <div class="connected-line">✓ Connected. Click Export All to send every note in this project to your Google Doc.</div>
           <div class="gdoc-actions">
-            <button class="btn btn-steel" id="pushNew">⬆ Push new notes to Doc</button>
+            <button class="btn btn-steel" id="exportAll">⬆ Export All to Google Doc</button>
             <a class="btn btn-ghost" href="${esc(g.docUrl)}" target="_blank" rel="noopener">Open my Google Doc</a>
-            <button class="btn btn-ghost" id="resendAll">Re-send everything</button>
             <button class="btn btn-ghost" id="verifyBtn">Test</button>
             <button class="btn btn-ghost" id="changeSetup">Change setup</button>
           </div>
@@ -1188,7 +1267,15 @@ function wireMain(){
   bind("micBtn","onclick",toggleListening);
   bind("hintSettings","onclick",(e)=>{ e.preventDefault(); openSettings(); });
   document.querySelectorAll(".type-tab").forEach(t=>{
-    t.onclick=()=>{ ui.draftType=t.dataset.type; document.querySelectorAll(".type-tab").forEach(x=>x.classList.remove("sel")); t.classList.add("sel"); };
+    t.onclick=()=>{
+      ui.draftType=t.dataset.type;
+      document.querySelectorAll(".type-tab").forEach(x=>x.classList.remove("sel")); t.classList.add("sel");
+      // If dictating via cloud and the multi-speaker need changed, reconnect to apply it.
+      if(voice.listening && voice.mode==="cloud" && diarizeWanted()!==voice.diarizeActive){
+        stopCloud(); voice.lastSpeaker=null; startCloud();
+        toast(diarizeWanted() ? "Multi-speaker on for this mode" : "Multi-speaker off");
+      }
+    };
   });
   const inp=$("#noteIn");
   if(inp){
@@ -1210,8 +1297,20 @@ function wireMain(){
   // google docs
   bind("epSave","onclick",saveEndpoint);
   bind("docLink","onclick",()=>connectDoc($("#docInput").value.trim()));
-  bind("pushNew","onclick",pushNew);
-  bind("resendAll","onclick",resendAll);
+  bind("exportAll","onclick",exportAll);
+  document.querySelectorAll(".spk-input").forEach(inp=>{
+    const commit=()=>{
+      const p=activeProject(); if(!p) return;
+      if(!p.speakers) p.speakers={};
+      const n=inp.dataset.spk; const v=inp.value.trim();
+      if(v) p.speakers[n]=v; else delete p.speakers[n];
+      saveState();
+      // live-update note bodies without losing focus
+      document.querySelectorAll(".note-body").forEach((el,i)=>{ if(p.notes[i]) el.innerHTML=renderNoteBody(p, p.notes[i].text); });
+    };
+    inp.addEventListener("change", commit);
+    inp.addEventListener("keydown", e=>{ if(e.key==="Enter"){ commit(); inp.blur(); } });
+  });
   bind("verifyBtn","onclick",verifySync);
   bind("openScript","onclick",()=>window.open("https://script.google.com/home/projects/create","_blank","noopener"));
   bind("viewCode","onclick",()=>{ const el=$("#gsCode"); if(el) el.style.display = el.style.display==="none" ? "block" : "none"; });
